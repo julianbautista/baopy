@@ -139,7 +139,7 @@ class Model:
         plt.tight_layout()
         plt.show()
 
-    def get_pk_2d(self, pars, no_peak=False, decouple_peak=False):
+    def get_pk_2d(self, pars, ell_max=4, no_peak=False, decouple_peak=False):
         ''' Compute P(k, mu) for a set of parameters and
             pk, pk_sideband
         Input
@@ -260,7 +260,6 @@ class Model:
         pk_2d /= (alpha_perp**2*alpha_para)
 
         #-- Multipoles of pk
-        ell_max = 8
         pk_mult = get_multipoles(pk_2d, ell_max=ell_max)
         
         #-- Multipoles of xi
@@ -334,7 +333,12 @@ class Model:
         for i in range(n_ell):
             axs[i, 1].plot(r, xi_mult[i]*r**2, color=f'C{i}', label=r'$\ell=$'+f'{ell[i]}')
             axs[i, 1].set_xlim(r_range)
-            axs[i, 0].legend()
+            axs[i, 1].legend()
+
+        axs[-1, 0].set_xlabel(r'$k$ [$h$ Mpc$^{-1}$]')
+        axs[-1, 1].set_xlabel(r'$r$ [$h^{-1}$ Mpc]')
+        axs[0, 0].set_title(r'$k^2 P_\ell(k)$')
+        axs[0, 1].set_title(r'$r^2 \xi_\ell(k)$')
 
         return f, axs
 
@@ -372,15 +376,17 @@ class Model:
         
         #-- Make the plots of model
         f, axs = self.plot_multipoles()       
-        #-- Add points 
+        
+        #-- Add 'data' points 
         for s in np.unique(data['space']):
             for l in np.unique(data['ell']):
                 w = (data['space'] == s) & (data['ell'] == l)
                 if np.sum(w)>0:
                     x = data['x'][w]
                     y = data_y[w] 
-                    print(int(s), int(l)//2)
-                    axs[int(l)//2, int(s)].plot(x, y*x**2, 'o')
+                    i_row = int(l)//2
+                    i_col = int(s)
+                    axs[i_row, i_col].plot(x, y*x**2, 'o')
 
 
 
