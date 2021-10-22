@@ -50,6 +50,10 @@ def get_multipoles(x, ell_max=8):
         x_mult[i] *= (2*ell[i]+1)
     return x_mult
 
+def get_convolved_xi(xi_mult, window_mult):
+
+    return xi_conv
+
 class Model:
 
     def __init__(self, pk_file=None): 
@@ -315,16 +319,28 @@ class Model:
 
         return y
 
-    def plot_multipoles(self, k_range=(0., 0.5), r_range=(0, 200)):
+    def plot_multipoles(self, f=None, axs=None, ell_max=None, 
+        k_range=(0., 0.5), r_range=(0, 200), convolved=False):
 
         ell = self.ell
         n_ell = ell.size
         k = self.k
-        pk_mult = self.pk_mult
-        r = self.r 
-        xi_mult = self.xi_mult
+        r = self.r
+        if convolved:
+            pk_mult = self.pk_mult_convol
+            xi_mult = self.xi_mult_convol
+        else: 
+            pk_mult = self.pk_mult
+            xi_mult = self.xi_mult
 
-        f, axs = plt.subplots(ncols=2, nrows=n_ell, figsize=(8, 7), sharex='col')
+        if ell_max is None:
+            n_ell = ell.size
+        else:
+            n_ell = ell_max//2 + 1
+
+        if f is None:
+            f, axs = plt.subplots(ncols=2, nrows=n_ell, figsize=(8, 7), sharex='col')
+
         for i in range(n_ell):
             axs[i, 0].plot(k, pk_mult[i]*k**2, color=f'C{i}', label=r'$\ell=$'+f'{ell[i]}')
             axs[i, 0].set_xlim(k_range)
@@ -388,72 +404,57 @@ class Model:
                     i_col = int(s)
                     axs[i_row, i_col].plot(x, y*x**2, 'o')
 
-
-
-    #-----------------------
-    #-- OLD STUFF below this 
-    #-----------------------
-
-
-    def get_pk_multipoles(self, kout, pars, options):
-        ''' Compute P_\ell(k) from a set of parameters
-        Input
-        -----
-        kout (np.array): contains the wavevector values in h/Mpc
-        pars (dict): contains the parameters required for P(k, \mu) 
-        options (dict): contains options for the calculation including
-                        ell_max, no_peak, decouple_peak, apply_window
-        Output
-        -----
-        pk_mult_out (np.array): array with shape (n_ell, kout.size) with the P_\ell(k)
-        '''
-        pk2d = self.get_2d_power_spectrum(pars, 
-                                          no_peak =options['no_peak'], 
-                                          decouple_peak = options['decouple_peak'])
-        pk_mult = self.get_multipoles(self.mu, pk2d, ell_max=options['ell_max'])
-
-        if options['apply_window']:
-            _, xi_mult = self.get_xi_multipoles_from_pk(self.k, pk_mult, output_r=self.r) 
-            xi_convol = self.get_convoled_xi(xi_mult, self.window_mult)
-            _, pk_mult_out = self.get_pk_multipoles_from_xi(self.r, xi_convol, output_k=kout)
-        else:
-            pk_mult_out = []
-            for pk in pk_mult:
-                pk_mult_out.append(np.interp(kout, self.k, pk))
-        pk_mult_out = np.array(pk_mult_out)
-
-        return pk_mult_out
-
     def read_window_function(self, window_file):
+        ''' Reads windown function multipoles from file
+        '''
         data = np.loadtxt(window_file)
         r_window = data[0]
         window = data[1:]
-
-        window_mult = []
-        for win in window:
-           window_spline = scipy.interpolate.InterpolatedUnivariateSpline(r_window, win)
-           window_mult.append(window_spline(self.r))
-        window_mult = np.array(window_mult)
+        n_ell = window.shape[0]
+        n_r = self.r.size
+        window_mult = np.zeros((n_ell, n_r))
+        for i in range(n_ell):
+            win = window[i]
+            window_spline = scipy.interpolate.InterpolatedUnivariateSpline(r_window, win)
+            window_mult[i] = window_spline(self.r)
         self.window_mult = window_mult
 
-    def get_convolved_xi(self, xi_mult, window_mult):
-        ''' Compute convolved multipoles of correlation function 
-            given Eq. 19, 20 and 21 of Beutler et al. 2017 
-        ''' 
-        xi = xi_mult
-        win = window_mult
+    def get_multipoles_window(self):
+        ''' Get xi and pk multipoles convolved by a window function
 
-        #-- Mono
-        xi_mono = xi[0]*win[0] + xi[1]*(1/5 * win[1]) + xi[2]*(1/9*win[2])
-        #-- Quad 
-        xi_quad = xi[0]*win[1] + xi[1]*(      win[0] + 2/7    *win[1] + 2/7     *win[2]) \
-                               + xi[2]*(2/7 * win[1] + 100/693*win[2] + 25/143  *win[3])
-        #-- Hexa
-        xi_hexa = xi[0]*win[2] + xi[1]*(18/35*win[1] + 20/77  *win[2] + 45/143  *win[3]) \
-                + xi[2]*(win[0] + 20/77 *win[1] + 162/1001*win[2] + 20/143*win[3] + 490/2431*win[4])
-    
-        xi_conv = np.array([xi_mono, xi_quad, xi_hexa])
-        return xi_conv
+            Compute convolved multipoles of correlation function 
+            given Eq. 19, 20 and 21 of Beutler et al. 2017
+
+            NOT YET TESTED
+        '''
+
+        xi = self.xi_mult
+        win = self.window_mult
+        ell = self.ell 
+
+        #-- Computes convolved xi 
+        xi_mono = (  xi[0]*win[0] 
+                   + xi[1]*(1/5*win[1]) 
+                   + xi[2]*(1/9*win[2]) )
+        xi_quad = (  xi[0]*win[1] 
+                   + xi[1]*(win[0] + 2/7*win[1] + 2/7*win[2]) 
+                   + xi[2]*(2/7*win[1] + 100/693*win[2] + 25/143*win[3]) )
+        xi_hexa = (  xi[0]*win[2] 
+                   + xi[1]*(18/35*win[1] + 20/77*win[2] + 45/143*win[3]) 
+                   + xi[2]*(win[0] + 20/77*win[1] + 162/1001*win[2] + 20/143*win[3] + 490/2431*win[4]) )
+        xi_convol = np.array([xi_mono, xi_quad, xi_hexa])
+
+        #-- Computes convoled pk with Hankel transforms
+        pk_convol = np.zeros_like(xi_convol)
+        for i in range(ell.size):
+            k, pk = hankl.xi2P(self.r, xi_convol[i], l=ell[i])
+            pk_convol[i] = pk.real
+
+        self.xi_mult_convol = xi_convol 
+        self.pk_mult_convol = pk_convol 
+
+
+
     
 class Data: 
 
