@@ -25,7 +25,7 @@ def legendre(ell, mu):
     else:
         return -1
 
-def get_multipoles(x, ell_max=8):
+def multipoles(x, ell_max=8):
     ''' Get multipoles of any function of ell
         It assumes symmetry around mu=0 
         Input
@@ -50,9 +50,9 @@ def get_multipoles(x, ell_max=8):
         x_mult[i] *= (2*ell[i]+1)
     return x_mult
 
-def get_convolved_xi(xi_mult, window_mult):
 
-    return xi_conv
+
+
 
 class Model:
 
@@ -62,10 +62,12 @@ class Model:
         #-- Fourier transform the power spectrum to correlation function
         r, xi = hankl.P2xi(k, pk, l=0)
         xi = xi.real
+
         #-- Get xi without BAO peak 
         xi_nopeak = self.get_sideband_xi(r, xi)
+
         #-- Get pk without BAO peak with an inverse Fourier transform
-        k0, pk_nopeak = hankl.xi2P(r, xi_nopeak, l=0) 
+        _, pk_nopeak = hankl.xi2P(r, xi_nopeak, l=0) 
         pk_nopeak = pk_nopeak.real
 
         self.r = r
@@ -143,7 +145,7 @@ class Model:
         plt.tight_layout()
         plt.show()
 
-    def get_pk_2d(self, pars, ell_max=4, no_peak=False, decouple_peak=False):
+    def get_pk_2d(self, pars, ell_max=4, no_peak=False, decouple_peak=True):
         ''' Compute P(k, mu) for a set of parameters and
             pk, pk_sideband
         Input
@@ -219,7 +221,7 @@ class Model:
         #-- Sideband model (no BAO peak)
         #-- If decouple_peak ==  True, do not scale sideband by alpha
         if decouple_peak:
-            pk_nopeak_2d = np.tile(pk_nopeak, (k.size, 1))
+            pk_nopeak_2d = np.tile(pk_nopeak, (mu.size, 1))
         else:
             pk_nopeak_2d = np.interp(ak_2d, k, pk_nopeak)
 
@@ -229,6 +231,7 @@ class Model:
             pk_2d = pk_nopeak_2d
         else:
             sigma_nl_k2 = ak_2d**2 * ( (1-amu_2d**2)*sigma_perp**2 + amu_2d**2*sigma_para**2 )
+            #sigma_nl_k2 =   k_2d**2 * ( (1- mu_2d**2)*sigma_perp**2 +  mu_2d**2*sigma_para**2 )
             #-- Scale BAO peak part by alphas
             pk_peak_2d = np.interp(ak_2d, k, pk-pk_nopeak)
             pk_2d  = pk_peak_2d * np.exp(-0.5*sigma_nl_k2)
@@ -237,13 +240,15 @@ class Model:
         #-- Reconstruction damping
         #-- exp^{ -0.5 k^2 \mu^2 \Sigma_r^2 }
         if 'sigma_rec' in pars and pars['sigma_rec'] != 0:
-            recon_damp = 1 - np.exp(-0.5*ak_2d**2*pars['sigma_rec']**2) 
+            recon_damp = 1 - np.exp(-0.5*(ak_2d*pars['sigma_rec'])**2) 
+            #recon_damp =  1 - np.exp(-0.5*( k_2d*pars['sigma_rec'])**2) 
         else:
             recon_damp = 1.
 
         #-- Fingers of God
         if 'sigma_fog' in pars and pars['sigma_fog'] != 0:
             fog = 1./( 1 + 0.5*(amu_2d*ak_2d*pars['sigma_fog'])**2)
+            #fog =  1./( 1 + 0.5*( mu_2d* k_2d*pars['sigma_fog'])**2)
         else:
             fog = 1.
 
@@ -256,7 +261,8 @@ class Model:
         #-- Kaiser redshift-space distortions
         kaiser = (bias  * (1 + beta *amu_2d**2*recon_damp) * 
                   bias2 * (1 + beta2*amu_2d**2*recon_damp))
-        
+        #kaiser = (bias  * (1 + beta *mu_2d**2*recon_damp) * 
+        #          bias2 * (1 + beta2*mu_2d**2*recon_damp))
         
         pk_2d *= kaiser
         pk_2d *= fog**2 
@@ -264,7 +270,7 @@ class Model:
         pk_2d /= (alpha_perp**2*alpha_para)
 
         #-- Multipoles of pk
-        pk_mult = get_multipoles(pk_2d, ell_max=ell_max)
+        pk_mult = multipoles(pk_2d, ell_max=ell_max)
         
         #-- Multipoles of xi
         ell = np.arange(0, ell_max+2, 2)
@@ -302,22 +308,22 @@ class Model:
         self.get_pk_2d(pars)
 
         n_data = data_x.size
-        y = np.zeros(n_data)
+        model = np.zeros(n_data)
         
         #-- Loop over xi and pk 
-        for s, x_model, y_model in zip([0,            1], 
-                                       [self.k,       self.r], 
-                                       [self.pk_mult, self.xi_mult]):
-            if s not in data_space: 
+        for space, x_model, y_model in zip([0,            1], 
+                                           [self.k,       self.r], 
+                                           [self.pk_mult, self.xi_mult]):
+            if space not in data_space: 
                 continue
-            w_s = (data_space == s)
+            w_s = (data_space == space)
             #-- Loop over multipole order
             for l in np.unique(data_ell[w_s]):
                 w = w_s & (data_ell == l)
                 i = int(l)//2 
-                y[w] = np.interp(data_x[w], x_model, y_model[i])
+                model[w] = np.interp(data_x[w], x_model, y_model[i])
 
-        return y
+        return model
 
     def plot_multipoles(self, f=None, axs=None, ell_max=None, 
         k_range=(0., 0.5), r_range=(0, 200), convolved=False):
@@ -406,10 +412,12 @@ class Model:
 
     def read_window_function(self, window_file):
         ''' Reads windown function multipoles from file
+            This file format was created by R. Neveux
         '''
         data = np.loadtxt(window_file)
         r_window = data[0]
         window = data[1:]
+
         n_ell = window.shape[0]
         n_r = self.r.size
         window_mult = np.zeros((n_ell, n_r))
@@ -453,60 +461,66 @@ class Model:
         self.xi_mult_convol = xi_convol 
         self.pk_mult_convol = pk_convol 
 
-
-
-    
 class Data: 
 
-    def __init__(self, r, mono, coss, quad=None, hexa=None, 
-                 rmin=40., rmax=180., nmocks=None):
+    def __init__(self, data_file=None, cova_file=None):
 
-        cf = mono
-        rr = r
-        if not quad is None:
-            rr = np.append(rr, r)
-            cf = np.append(cf, quad)
-        if not hexa is None:
-            rr = np.append(rr, r)
-            cf = np.append(cf, hexa)
-   
+        space, ell, scale, y_value = np.loadtxt(data_file, unpack=1)
+        s1, l1, x1, s2, l2, x2, cova_12 = np.loadtxt(cova_file, unpack=1)
         
-        ncf = cf.size
-        ncov = coss.shape[0]
-        
-        print(' Size r:', r.size) 
-        print(' Size cf:', ncf)
-        print(' Size cov:', ncov)
+        coords = {'space': space.astype(int), 'ell': ell.astype(int), 'scale': scale}
+        cova = np.reshape(cova_12, (y_value.size, y_value.size))
+        self.coords = coords
+        self.y_value = y_value
+        self.cova = cova
        
-        if ncf > ncov or ncov % mono.size > 0:
-            print('Problem: covariance shape is not compatible '+
-                  f'with correlation function. CF size: {ncf}  COV shape: {coss.shape}')
-            
-        if ncf < ncov:
-            print('Covariance matrix is larger than correlation function. Trying to cut')
-            coss = coss[:, :ncf]
-            coss = coss[:ncf, :]
+    def apply_cuts(self, cuts):
 
-        w = (rr>rmin) & (rr<rmax)
-        rr = rr[w]
-        cf = cf[w]
-        coss = coss[:, w]
-        coss = coss[w, :]
-        
-        print(f' After cutting {rmin:.1f} < r < {rmax:.1f}:')
-        print(' Size cf:', cf.size)
-        print(' Size cov:', coss.shape[0])
+        coords = self.coords
+        self.coords = {k: coords[k][cuts] for k in coords}
+        self.y_value = self.y_value[cuts]
+        cova = self.cova[:, cuts]
+        self.cova = cova[cuts]
+    
+    def inverse_cova(self, nmocks=0):
+        inv_cova = np.linalg.inv(self.cova)
+        if nmocks > 0:
+            correction = (1 - (self.y_value.size + 1.)/(nmocks-1))
+            inv_cova *= correction
+        self.inv_cova = inv_cova
+    
+    def plot(self, y_model=None, f=None, axs=None, scale_r=2, label=None, figsize=(7, 8)):
 
-        self.rr = rr
-        self.r = np.unique(rr)
-        self.cf = cf
-        self.coss = coss
-        self.nmul = rr.size//self.r.size
-        print('Covariance matrix is positive definite?', np.all(np.linalg.eigvals(coss)>0))
-        self.icoss = np.linalg.inv(coss)
-        if nmocks:
-            correction = (1 - (cf.size + 1.)/(nmocks-1))
-            self.icoss *= correction
+        coords = self.coords
+        space = np.unique(coords['space'])
+        n_space = space.size
+        ell = np.unique(coords['ell'])
+        n_ell = ell.size
+
+        y_value = self.y_value
+        y_error = np.sqrt(np.diag(self.cova))
+
+        if f is None:
+            f, axs = plt.subplots(ncols=n_space, nrows=n_ell, figsize=(8, 7), sharex='col', squeeze=False)
+
+        xlabels = [r'$k$ [$h$ Mpc$^{-1}$]', r'$r$ [$h^{-1}$ Mpc]']
+        titles = [r'$k^2 P_\ell(k)$', r'$r^2 \xi_\ell(k)$']
+
+        for col in range(n_space):
+            w_space = coords['space'] == space[col]
+            for row in range(n_ell):
+                w_ell = coords['ell'] == ell[row]
+                w = w_space & w_ell
+                x = coords['scale'][w]
+                
+                axs[row, col].errorbar(x, y_value[w]*x**scale_r, y_error[w]*x**scale_r, fmt='o',
+                    color=f'C{row}')
+                if not y_model is None:
+                    axs[row, col].plot(x, y_model[w]*x**scale_r, color=f'C{row}')
+            axs[row, col].set_xlabel(xlabels[space[col]])
+            axs[0, col].set_title(titles[space[col]])
+
+        return f, axs
     
 class Chi2: 
 
@@ -515,84 +529,115 @@ class Chi2:
         self.model = model
         self.parameters = parameters
         self.options = options
-        if options['fit_broadband']:
-            self.setup_broadband_H()
-        self.best_pars = None
-        #print(parameters)
+        self.ndata = data.y_value.size 
+        
+        self.setup_iminuit()
+        if 'fit_broadband' in options and options['fit_broadband'] == True:
+            bb_min = options['bb_min'] if 'bb_min' in options else -2
+            bb_max = options['bb_max'] if 'bb_max' in options else 0
+            self.setup_broadband(bb_min=bb_min, bb_max=bb_max)
 
-    def get_model(self, r, pars=None):
-        if pars is None:
-            pars = self.best_pars
-        model = self.model.get_xi_multipoles(r, pars, self.options)
-        return model.ravel()
+    def setup_iminuit(self):
+
+        parameters = self.parameters 
+        
+        #-- Obtain list of names and values to initialise Minuit class
+        pars_names = []
+        pars_values = []
+        for par in parameters:
+            pars_names.append(par)
+            pars_values.append(parameters[par]['value'])
+
+        mig = iminuit.Minuit(self, tuple(pars_values), name=tuple(pars_names))
+        mig.errordef = iminuit.Minuit.LEAST_SQUARES
+
+        #-- Setup fixed parameters, limits and step sizes 
+        for par in parameters:
+            par_dict = parameters[par]
+            mig.errors[par] = par_dict['error'] if 'error' in par_dict else par_dict['value']
+            mig.fixed[par] = par_dict['fixed'] if 'fixed' in par_dict else False
+            mig.errors[par] = 0 if 'fixed' in par_dict and par_dict['fixed'] else mig.errors[par]
+            limit_low = par_dict['limit_low'] if 'limit_low' in par_dict else None
+            limit_upp = par_dict['limit_upp'] if 'limit_upp' in par_dict else None
+            mig.limits[par] = (limit_low, limit_upp)
+            
+        self.mig = mig 
+
+    def get_model(self, pars):
+        coords = self.data.coords
+        y_model = self.model.get_multipoles(coords['space'], coords['ell'], coords['scale'], pars)
+        return y_model
     
-    def setup_broadband_H(self, r=None, bb_min=None, bb_max=None):
+    def setup_broadband(self, bb_min=-2, bb_max=0):
         ''' Setup analytical solution for best-fit polynomial nuisance terms
 	        http://pdg.lbl.gov/2016/reviews/rpp2016-rev-statistics.pdf eq. 39.22 and surrounding
         '''
-        if r is None:
-            r = self.data.rr
-        if bb_min is None:
-            bb_min = self.options['bb_min']
-        if bb_max is None:
-            bb_max = self.options['bb_max']
+        coords = self.data.coords
+        space = coords['space']
+        ell = coords['ell']
+        scale = coords['scale']
 
-        rr = np.unique(r)
-        nmul = r.size//rr.size
+        upairs = np.unique([space, ell], axis=1)
+        n_upairs = upairs.shape[1]
         power = np.arange(bb_min, bb_max+1) 
-        H = rr[:, None]**power 
-        H = np.kron(np.eye(nmul), H)
-        self.H = H
-        return H
+        n_bb_pars = n_upairs * power.size
+        h_matrix = np.zeros((scale.size, n_bb_pars))
+        for row in range(scale.size):
+            col_space_ell = np.where((upairs[0]== space[row]) & (upairs[1]==ell[row]))[0][0]
+            for j in range(power.size):
+                col = col_space_ell*power.size + j
+                p = power[j]
+                h_matrix[row, col] = scale[row]**p
 
-    def get_broadband(self, bb_pars, r=None, H=None):
+        norm_matrix = np.linalg.inv(h_matrix.T @ self.data.inv_cova @ h_matrix)
+        self.h_matrix = h_matrix
+        self.norm_matrix = norm_matrix
 
-        H = self.setup_broadband_H(r) if H is None else H 
-        return H.dot(bb_pars)
-
-    def fit_broadband(self, residual, icoss, H):
+    def fit_broadband(self, residual):
        
-        if hasattr(self, 'inv_HWH'):
-            inv_HWH = self.inv_HWH 
-        else:
-            inv_HWH = np.linalg.inv(H.T.dot(icoss.dot(H)))
-            self.inv_HWH = inv_HWH
+        norm_matrix = self.norm_matrix
+        h_matrix = self.h_matrix 
+        inv_cova = self.data.inv_cova 
 
-        bb_pars = inv_HWH.dot(H.T.dot(icoss.dot(residual)))
+        #-- Eq. 39.22 of the reference
+        bb_pars = norm_matrix.dot(h_matrix.T.dot(inv_cova.dot(residual)))
 
         return bb_pars
+
+    def get_broadband(self, bb_pars):
+
+        return self.h_matrix.dot(bb_pars)
 
     def __call__(self, p):
         ''' Compute chi2 for a set of free parameters (and only the free parameters!)
         '''
+
+        #-- Create dictionary from array, to give it to Model
         pars = {}
         i = 0
-        for par in self.parameters:
-            if self.parameters[par]['fixed']:
-                pars[par] = self.parameters[par]['value']
-            else:
-                pars[par] = p[i]
-                limit_low = self.parameters[par]['limit_low']
-                if not limit_low is None and p[i]<limit_low:
-                    return np.inf
-                limit_upp = self.parameters[par]['limit_upp']
-                if not limit_upp is None and p[i]>limit_upp:
-                    return np.inf
-                i+=1
+        for i, par in enumerate(self.parameters):
+            pars[par] = p[i]
+            i+=1
 
-        model = self.get_model(self.data.r, pars)
-        residual = self.data.cf - model
-        inv_cov = self.data.icoss
+        #-- Compute model, residuals
+        data = self.data 
+        model = self.model 
+        coords = data.coords
+        y_model = model.get_multipoles(coords['space'], coords['ell'], coords['scale'], pars)
+        y_residual = data.y_value - y_model
+        inv_cova = data.inv_cova
 
-        if self.options['fit_broadband']:
-            bb_pars = self.fit_broadband(residual, inv_cov, self.H)
-            bb = self.get_broadband(bb_pars, H=self.H)
-            residual -= bb
+        #-- Add broadband function
+        if not self.options is None and self.options['fit_broadband']:
+            bb_pars = self.fit_broadband(y_residual)
+            broadband = self.get_broadband(bb_pars)
+            y_residual -= broadband
 
-        chi2 = np.dot(residual, np.dot(inv_cov, residual))
+        chi2 = np.dot(y_residual, np.dot(inv_cova, y_residual))
 
+        #-- Add Gaussian priors if present
         for par in pars:
-            if par in self.parameters and 'prior_mean' in self.parameters[par]:
+            if 'prior_mean' in self.parameters[par]:
                 mean = self.parameters[par]['prior_mean']
                 sigma = self.parameters[par]['prior_sigma']
                 chi2 += ((pars[par]-mean)/sigma)**2
@@ -605,275 +650,87 @@ class Chi2:
 
     def fit(self):
 
-        #-- Initialise iMinuit dictionaty for initial guess of parameters
-        #-- to be fitted, excluding those fixed.
-        minuit_options = {}
-        pars_to_fit_values = []
-        pars_to_fit_name = []
-        for par in self.parameters:
-            if self.parameters[par]['fixed'] == True: 
-                continue
-            pars_to_fit_name.append(par)
-            pars_to_fit_values.append(self.parameters[par]['value'])
-            minuit_options['error_'+par] = self.parameters[par]['error']
-            minuit_options['limit_'+par] = (self.parameters[par]['limit_low'], 
-                                            self.parameters[par]['limit_upp'])
+        #-- Run the minimizer 
+        mig = self.mig
+        mig.migrad()
 
-        mig = iminuit.Minuit.from_array_func(self, tuple(pars_to_fit_values),
-                                            name = tuple(pars_to_fit_name),
-                             print_level=1, errordef=1, throw_nan=False,
-                             **minuit_options)
-        #print(mig.get_param_states())
-        #mig.tol = 0.01
-        imin = mig.migrad()
-        print(mig.get_param_states())
+        #-- Recover best-fit parameters and model 
+        best_pars = {k: mig.params[k].value for k in mig.parameters}
+        best_model = self.get_model(best_pars)
 
-        best_pars = {}
-        for par in self.parameters:
-            best_pars[par] = {}
-            if self.parameters[par]['fixed']:
-                best_pars[par]['value'] = self.parameters[par]['value']
-                best_pars[par]['error'] = 0
-            else:
-                best_pars[par]['value'] = mig.values[par]
-                best_pars[par]['error'] = mig.errors[par]
+        #-- Add broadband 
+        if not self.options is None and self.options['fit_broadband']:
+            best_bb_pars = self.fit_broadband(self.data.y_value - best_model)
+            best_broadband = self.get_broadband(best_bb_pars)
+            n_bb_pars = best_bb_pars.size
+        else:
+            best_broadband = best_model*0
+            best_bb_pars = None 
+            n_bb_pars = 0
 
-        if self.options['fit_broadband']==True:
-            print('\nBroadband terms')
-            pars = {par: best_pars[par]['value'] for par in best_pars}    
-            model = self.get_model(self.data.r, pars)
-            residual = self.data.cf - model
-            inv_cov = self.data.icoss
-            bb_pars = self.fit_broadband(residual, inv_cov, self.H)
-            self.bb_pars = bb_pars
-            ibb = np.arange(self.options['bb_max']-self.options['bb_min']+1)
-            bb_name = []
-            bb_name+= [f'bb_{i}_mono' for i in ibb]
-            if self.options['ell_max']>=2:
-                bb_name+= [f'bb_{i}_quad' for i in ibb]
-            if self.options['ell_max']>=4:
-                bb_name+= [f'bb_{i}_hexa' for i in ibb]
-            for bb, bbn in zip(bb_pars, bb_name):
-                best_pars[bbn] = {'value': bb, 'error': 0}
-                print(bbn, bb)
-
-        #mig.hesse()
-        print('\nApproximate correlation coefficients:')
-        print(mig.matrix(correlation=True))
-        self.mig = mig
-        #self.imin = imin
-        self.is_valid = imin[0]['is_valid']
         self.best_pars = best_pars
+        self.best_model = best_model + best_broadband
+        self.best_bb_pars = best_bb_pars 
+        self.best_broadband = best_broadband
+
+        self.mig = mig
         self.chi2min = mig.fval
-        self.ndata = self.data.cf.size
-        self.npars = len(pars_to_fit_name)
-        if self.options['fit_broadband']:
-            self.npars += bb_pars.size
-        #self.covariance = mig.covariance
-        self.rchi2min = self.chi2min/(self.ndata-self.npars)
-        print(f'\n chi2/(ndata-npars) = {self.chi2min:.2f}/({self.ndata}-{self.npars}) = {self.rchi2min:.2f}') 
-
-    def get_correlation_coefficient(self, par_par1, par_par2):
-
-        if not hasattr(self, 'covariance'):
-            print('Chi2 was not yet minimized')
-            return
+        self.npar = mig.nfit + n_bb_pars
+        self.ndof = self.ndata - self.npar
+        self.rchi2min = self.chi2min/(self.ndof)
+        print(f'chi2/(ndata-npars) = {self.chi2min:.2f}/({self.ndata}-{self.npar}) = {self.rchi2min:.2f}') 
         
-        cov = self.covariance
-        var1 = cov[par_par1, par_par1]
-        var2 = cov[par_par2, par_par2]
-        cov12 = cov[par_par1, par_par2]
-        corr_coeff = cov12/np.sqrt(var1*var2)
-        return corr_coeff
+    def plot(self, f=None, axs=None, scale_r=2, label=None, figsize=(10, 4)):
+
+        f, axs = self.data.plot(y_model=self.best_model)
+        return f, axs
+
+    def mcmc(self, sampler_name='emcee', nsteps=1000, nwalkers=10, use_pool=False):
+        ''' NOT YET WORKING 
         
-
-    def plot_bestfit(self, fig=None, model_only=0, scale_r=2, label=None, figsize=(10, 4)):
-
-        nmul = self.options['ell_max']//2+1
-        r = self.data.r*1
-        cf = self.data.cf*1
-        dcf = np.sqrt(np.diag(self.data.coss*1))
-        r_model = np.linspace(r.min(), r.max(), 200)
-        pars = {par: self.best_pars[par]['value'] for par in self.best_pars}
-        cf_model = self.get_model(r_model, pars)
-        if hasattr(self, 'bb_pars'):
-            bb_model = self.get_broadband(self.bb_pars, r=np.tile(r_model, nmul))
-            cf_model += bb_model
-            bb=True
+        '''
+        if sampler_name == 'zeus':
+            import zeus
+            sampling_function = zeus.sampler
+        elif sampler_name == 'emcee':
+            import emcee
+            sampling_function = emcee.EnsembleSampler
         else:
-            bb=False
+            print("ERROR: Need a valid sampler: 'zeus' or 'emcee'")
+            return 
 
-        if fig is None:
-            fig, axes = plt.subplots(nrows=1, ncols=nmul, figsize=figsize)
+        def log_prob(p):
+            return self.log_prob(p)
+
+        pars_free = [par for par in parameters if not parameters[par]['fixed']]
+        npars = len(pars_free)
+
+        #-- Use limits to set the start point for random walkers
+        print('\nSetting up starting point of walkers:')
+        start = np.zeros((nwalkers, npars))
+        for j, par in enumerate(pars_free):
+            if par in chi2.best_pars and chi2.best_pars[par]['error']>0.:
+                limit_low = parameters[par]['limit_low']
+                limit_upp = parameters[par]['limit_upp']
+                value = chi2.best_pars[par]['value']
+                error = chi2.best_pars[par]['error']
+                limit_low = np.max([limit_low, value-10*error])
+                limit_upp = np.min([limit_upp, value+10*error])
+                print('Randomly sampling for', par, 'between', limit_low, limit_upp )
+                start[:, j] = np.random.rand(nwalkers)*(limit_upp-limit_low)+limit_low
+
+        if use_pool == 'True':
+            from multiprocessing import Pool, cpu_count
+            print(f'Using multiprocessing with {cpu_count()} cores')
+            with Pool() as pool:
+                sampler = sampling_function(nwalkers, npars, log_prob, pool=pool)
+                sampler.run_mcmc(start, nsteps, progress=True)
         else:
-            axes = fig.get_axes()
+            print('Using a single core')
+            sampler = sampling_function(nwalkers, npars, log_prob)
+            sampler.run_mcmc(start, nsteps, progress=True)
 
-        for i in range(nmul):
-            try:
-                ax = axes[i]
-            except:
-                ax = axes
-            y_data  =  cf[i*r.size:(i+1)*r.size]
-            dy_data = dcf[i*r.size:(i+1)*r.size]
-            y_model = cf_model[i*r_model.size:(i+1)*r_model.size]
-            y_data *= r**scale_r
-            dy_data *= r**scale_r
-            y_model *= r_model**scale_r 
-            if bb:
-                b_model = bb_model[i*r_model.size:(i+1)*r_model.size]
-                b_model *= r_model**scale_r
+        if sampler_name == 'zeus':
+            sampler.summary
 
-            if not model_only:
-                ax.errorbar(r, y_data, dy_data, fmt='o', ms=4)
-            color = next(ax._get_lines.prop_cycler)['color']
-            ax.plot(r_model, y_model, color=color, label=label)
-            #if bb:
-            #    ax.plot(r_model, b_model, '--', color=color)
-
-            if scale_r!=0:
-                ax.set_ylabel(r'$r^{%d} \xi_{%d}$ [$h^{%d}$ Mpc$^{%d}]$'%\
-                              (scale_r, i*2, -scale_r, scale_r))
-            else:
-                ax.set_ylabel(r'$\xi_{%d}$'%(i*2), fontsize=16)
-            ax.set_xlabel(r'$r \ [h^{-1} \mathrm{Mpc}]$', fontsize=12)
-
-        return fig
-
-    def scan1d(self, par_name='alpha', par_min=0.8, par_max=1.2, par_nsteps=400):
-
-        #-- Initialise chi2 grid
-        par_grid = np.linspace(par_min, par_max, par_nsteps)
-        chi2_grid = np.zeros(par_nsteps)
-
-        for i in range(par_nsteps):
-            self.parameters[par_name]['value'] = par_grid[i]
-            self.parameters[par_name]['fixed'] = True
-
-            minuit_options = {}
-            pars_to_fit_values = []
-            pars_to_fit_name = []
-            for par in self.parameters:
-                if self.parameters[par]['fixed'] == True: 
-                    continue
-                pars_to_fit_name.append(par)
-                pars_to_fit_values.append(self.best_pars[par]['value'])
-                minuit_options['error_'+par] = self.best_pars[par]['error']
-                minuit_options['limit_'+par] = (self.parameters[par]['limit_low'], 
-                                                self.parameters[par]['limit_upp'])
-
-            mig = iminuit.Minuit.from_array_func(self, tuple(pars_to_fit_values),
-                                            name = tuple(pars_to_fit_name),
-                             print_level=0, errordef=1, throw_nan=False,
-                             **minuit_options)
-            mig.migrad()
-            print( 'scanning: %s = %.5f  chi2 = %.4f'%(par_name, par_grid[i], mig.fval))
-            chi2_grid[i] = mig.fval
-
-        return par_grid, chi2_grid
-
-    def scan_2d(self, par_names=['at','ap'], \
-                par_min=[0.8, 0.8], \
-                par_max=[1.2, 1.2], \
-                par_nsteps=[40, 40] ):
-
-        #-- Initialise chi2 grid
-        par0 = par_names[0]
-        par1 = par_names[1]
-        par_grid0 = np.linspace(par_min[0], par_max[0], par_nsteps[0])
-        par_grid1 = np.linspace(par_min[1], par_max[1], par_nsteps[1])
-        chi2_grid = np.zeros(par_nsteps)
-
-        for i in range(par_nsteps[0]):
-            self.parameters[par0]['value'] = par_grid0[i]
-            self.parameters[par0]['fixed'] = True
-            for j in range(par_nsteps[1]):
-                self.parameters[par1]['value'] = par_grid1[j]
-                self.parameters[par1]['fixed'] = True
-
-                minuit_options = {}
-                pars_to_fit_values = []
-                pars_to_fit_name = []
-                for par in self.parameters:
-                    if self.parameters[par]['fixed'] == True: 
-                        continue
-                    pars_to_fit_name.append(par)
-                    pars_to_fit_values.append(self.best_pars[par]['value'])
-                    minuit_options['error_'+par] = self.best_pars[par]['error']
-                    minuit_options['limit_'+par] = (self.parameters[par]['limit_low'], 
-                                                    self.parameters[par]['limit_upp'])
-
-                mig = iminuit.Minuit.from_array_func(self, tuple(pars_to_fit_values),
-                                                name = tuple(pars_to_fit_name),
-                                print_level=0, errordef=1, throw_nan=False,
-                                **minuit_options)
-                mig.migrad()
-                print( 'scanning: %s = %.5f   %s = %.5f    chi2 = %.4f'%\
-                        (par0, par_grid0[i], par0, par_grid1[j], mig.fval))
-                chi2_grid[i, j] = mig.fval
-
-        return par_grid0, par_grid1, chi2_grid
-
-    def export_bestfit_parameters(self, fout):
-
-        fout = open(fout, 'w')
-        print(f'chi2  {self.chi2min}', file=fout)
-        print(f'ndata {self.ndata}', file=fout)
-        print(f'npars {self.npars}', file=fout)
-        print(f'rchi2 {self.rchi2min}', file=fout)
-       
-        for p in self.best_pars:
-            print(p,          self.best_pars[p]['value'], file=fout)
-            print(p+'_error', self.best_pars[p]['error'], file=fout)
-
-        fout.close()
-
-    def export_covariance(self, fout):
-
-        fout = open(fout, 'w')
-        print('# par_par1 par_par2 covariance corr_coeff', file=fout)
-        cov = self.covariance
-        for k in cov:
-            corr = cov[k]/np.sqrt(cov[(k[0], k[0])]*cov[(k[1], k[1])])
-            print(f'{k[0]} {k[1]} {cov[k]} {corr}', file=fout)
-        fout.close()  
-
-    def export_model(self, fout):
-
-        nmul = self.options['ell_max']//2+1
-        nr = 200
-        r_model = np.linspace(self.data.r.min(), self.data.r.max(), nr)
-        pars = {par: self.best_pars[par]['value'] for par in self.best_pars}  
-        cf_model = self.get_model(r_model, pars)
-
-        if hasattr(self, 'bb_pars'):
-            bb_model = self.get_broadband(self.bb_pars, r=np.tile(r_model, nmul))
-            cf_model += bb_model
-            bb=True
-        else:
-            bb=False
-
-        cf_model = cf_model.reshape((nmul, nr)) 
-        if bb:
-            bb_model = bb_model.reshape((nmul, nr)) 
-        
-        fout = open(fout, 'w')
-        line = '#r mono '
-        line += 'quad '*(self.options['ell_max']>=2)
-        line += 'hexa '*(self.options['ell_max']>=4)
-        if bb:
-            line += 'bb_mono '
-            line += 'bb_quad '*(self.options['ell_max']>=2)
-            line += 'bb_hexa '*(self.options['ell_max']>=4)
-        print(line, file=fout)
-
-        for i in range(nr):
-            line = f'{r_model[i]}  '
-            for l in range(nmul):
-                line += f'{cf_model[l, i]}  ' 
-            if bb:
-                for l in range(nmul):
-                    line += f'{bb_model[l, i]}  ' 
-            print(line, file=fout)
-        fout.close()
-
-
+        chain = sampler.get_chain(flat=True)
