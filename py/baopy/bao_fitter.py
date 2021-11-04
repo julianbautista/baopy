@@ -699,7 +699,9 @@ class Chi2:
         
     def plot(self, f=None, axs=None, scale_r=2, label=None, figsize=(10, 4)):
 
-        f, axs = self.data.plot(y_model=self.best_model)
+        f, axs = self.data.plot(f=f, axs=axs, scale_r=scale_r, 
+                                y_model=self.best_model,
+                                figsize=figsize, label=label)
         return f, axs
 
     def mcmc(self, sampler_name='emcee', nsteps=1000, nwalkers=10, use_pool=False):
