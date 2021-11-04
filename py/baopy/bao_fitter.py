@@ -466,13 +466,30 @@ class Data:
     def __init__(self, data_file=None, cova_file=None):
 
         space, ell, scale, y_value = np.loadtxt(data_file, unpack=1)
-        s1, l1, x1, s2, l2, x2, cova_12 = np.loadtxt(cova_file, unpack=1)
-        
         coords = {'space': space.astype(int), 'ell': ell.astype(int), 'scale': scale}
-        cova = np.reshape(cova_12, (y_value.size, y_value.size))
+        
+        #-- Make sure the covariance and data vector match
+        #-- First, create a dictionary 
+        s1, l1, x1, s2, l2, x2, cova_12 = np.loadtxt(cova_file, unpack=1)
+        cova_dict = {}
+        for i in range(cova_12.size):
+            cova_dict[s1[i], l1[i], x1[i], s2[i], l2[i], x2[i]] = cova_12[i]
+        #-- Second, fill covariance matrix with only data vector elements, in the same order
+        n = space.size
+        cova_match = np.zeros((n, n))
+        for i in range(n):
+            s1 = coords['space'][i]
+            l1 = coords['ell'][i]
+            x1 = coords['scale'][i]
+            for j in range(n):
+                s2 = coords['space'][j]
+                l2 = coords['ell'][j]
+                x2 = coords['scale'][j]
+                cova_match[i, j] = cova_dict[s1, l1, x1, s2, l2, x2]
+
         self.coords = coords
         self.y_value = y_value
-        self.cova = cova
+        self.cova = cova_match
        
     def apply_cuts(self, cuts):
 
