@@ -60,14 +60,14 @@ class Model:
 
         k, pk = np.loadtxt(pk_file, unpack=True)
         #-- Fourier transform the power spectrum to correlation function
-        r, xi = hankl.P2xi(k, pk, l=0)
+        r, xi = hankl.P2xi(k, pk, l=0, lowring=True)
         xi = xi.real
 
         #-- Get xi without BAO peak 
         xi_nopeak = self.get_sideband_xi(r, xi)
 
         #-- Get pk without BAO peak with an inverse Fourier transform
-        _, pk_nopeak = hankl.xi2P(r, xi_nopeak, l=0) 
+        _, pk_nopeak = hankl.xi2P(r, xi_nopeak, l=0, lowring=True) 
         pk_nopeak = pk_nopeak.real
 
         self.r = r
@@ -79,6 +79,7 @@ class Model:
         self.mu = None
         self.mu_2d = None 
         self.k_2d = None
+        self.window_mult = None
 
     def get_sideband_xi(self, r, xi, 
         r_range=[[50., 80.], [160., 190.]]):
@@ -276,9 +277,10 @@ class Model:
         ell = np.arange(0, ell_max+2, 2)
         xi_mult = np.zeros((ell.size, k.size))
         for i in range(ell.size):
-            r, xi = hankl.P2xi(k, pk_mult[i], l=ell[i])
+            r, xi = hankl.P2xi(k, pk_mult[i], l=ell[i], lowring=True)
             xi_mult[i] = xi.real
 
+            
         self.ell = ell
         self.mu = mu
         self.mu_2d = mu_2d 
@@ -288,6 +290,10 @@ class Model:
         self.pk_mult = pk_mult
         self.xi_mult = xi_mult
         self.pk_2d = pk_2d
+        
+        if not self.window_mult is None:
+            self.get_multipoles_window()
+        
 
     def get_multipoles(self, data_space, data_ell, data_x, pars):
         ''' General function that computes pk or xi multipoles 
@@ -310,10 +316,17 @@ class Model:
         n_data = data_x.size
         model = np.zeros(n_data)
         
+        if not self.window_mult is None:
+            pk_mult = self.pk_mult_convol
+            xi_mult = self.xi_mult_convol
+        else:
+            pk_mult = self.pk_mult
+            xi_mult = self.xi_mult
+
         #-- Loop over xi and pk 
-        for space, x_model, y_model in zip([0,            1], 
-                                           [self.k,       self.r], 
-                                           [self.pk_mult, self.xi_mult]):
+        for space, x_model, y_model in zip([0,       1], 
+                                           [self.k,  self.r], 
+                                           [pk_mult, xi_mult]):
             if space not in data_space: 
                 continue
             w_s = (data_space == space)
@@ -326,7 +339,7 @@ class Model:
         return model
 
     def plot_multipoles(self, f=None, axs=None, ell_max=None, 
-        k_range=(0., 0.5), r_range=(0, 200), convolved=False):
+        k_range=(0., 0.5), r_range=(0, 200), convolved=False, ls=None):
 
         ell = self.ell
         n_ell = ell.size
@@ -348,12 +361,12 @@ class Model:
             f, axs = plt.subplots(ncols=2, nrows=n_ell, figsize=(8, 7), sharex='col')
 
         for i in range(n_ell):
-            axs[i, 0].plot(k, pk_mult[i]*k**2, color=f'C{i}', label=r'$\ell=$'+f'{ell[i]}')
+            axs[i, 0].plot(k, pk_mult[i]*k**2, color=f'C{i}', ls=ls, label=r'$\ell=$'+f'{ell[i]}')
             axs[i, 0].set_xlim(k_range)
             axs[i, 0].legend()
         
         for i in range(n_ell):
-            axs[i, 1].plot(r, xi_mult[i]*r**2, color=f'C{i}', label=r'$\ell=$'+f'{ell[i]}')
+            axs[i, 1].plot(r, xi_mult[i]*r**2, color=f'C{i}', ls=ls, label=r'$\ell=$'+f'{ell[i]}')
             axs[i, 1].set_xlim(r_range)
             axs[i, 1].legend()
 
@@ -414,7 +427,7 @@ class Model:
         ''' Reads windown function multipoles from file
             This file format was created by R. Neveux
         '''
-        data = np.loadtxt(window_file)
+        data = np.loadtxt(window_file, unpack=1)
         r_window = data[0]
         window = data[1:]
 
@@ -423,7 +436,7 @@ class Model:
         window_mult = np.zeros((n_ell, n_r))
         for i in range(n_ell):
             win = window[i]
-            window_spline = scipy.interpolate.InterpolatedUnivariateSpline(r_window, win)
+            window_spline = scipy.interpolate.InterpolatedUnivariateSpline(r_window, win, ext=1)
             window_mult[i] = window_spline(self.r)
         self.window_mult = window_mult
 
@@ -455,7 +468,7 @@ class Model:
         #-- Computes convoled pk with Hankel transforms
         pk_convol = np.zeros_like(xi_convol)
         for i in range(ell.size):
-            k, pk = hankl.xi2P(self.r, xi_convol[i], l=ell[i])
+            k, pk = hankl.xi2P(self.r, xi_convol[i], l=ell[i], lowring=True)
             pk_convol[i] = pk.real
 
         self.xi_mult_convol = xi_convol 
@@ -474,6 +487,7 @@ class Data:
         cova_dict = {}
         for i in range(cova_12.size):
             cova_dict[s1[i], l1[i], x1[i], s2[i], l2[i], x2[i]] = cova_12[i]
+
         #-- Second, fill covariance matrix with only data vector elements, in the same order
         n = space.size
         cova_match = np.zeros((n, n))
@@ -521,7 +535,10 @@ class Data:
             f, axs = plt.subplots(ncols=n_space, nrows=n_ell, figsize=(8, 7), sharex='col', squeeze=False)
 
         xlabels = [r'$k$ [$h$ Mpc$^{-1}$]', r'$r$ [$h^{-1}$ Mpc]']
-        titles = [r'$k^2 P_\ell(k)$', r'$r^2 \xi_\ell(k)$']
+        if scale_r == 0:
+            titles = [r'$k^2 P_\ell(k)$', r'$r^2 \xi_\ell(k)$']
+        else:
+            titles = [fr'$k^{scale_r} P_\ell(k)$', fr'$r^{scale_r} \xi_\ell(k)$']
 
         for col in range(n_space):
             w_space = coords['space'] == space[col]
