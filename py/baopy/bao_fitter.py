@@ -1,6 +1,6 @@
-from math import e
 import numpy as np
 import pylab as plt
+import pickle
 import hankl
 import iminuit
 import scipy.interpolate 
@@ -315,13 +315,13 @@ class Model:
 
         n_data = data_x.size
         model = np.zeros(n_data)
-        
+
+        xi_mult = self.xi_mult        
         if not self.window_mult is None:
             pk_mult = self.pk_mult_convol
-            xi_mult = self.xi_mult_convol
+            #xi_mult = self.xi_mult_convol
         else:
             pk_mult = self.pk_mult
-            xi_mult = self.xi_mult
 
         #-- Loop over xi and pk 
         for space, x_model, y_model in zip([0,       1], 
@@ -339,18 +339,18 @@ class Model:
         return model
 
     def plot_multipoles(self, f=None, axs=None, ell_max=None, 
-        k_range=(0., 0.5), r_range=(0, 200), convolved=False, ls=None):
+        k_range=(0., 0.5), r_range=(0, 200), convolved=True, ls=None):
 
         ell = self.ell
         n_ell = ell.size
         k = self.k
         r = self.r
-        if convolved:
+        if convolved and not self.window_mult is None:
             pk_mult = self.pk_mult_convol
-            xi_mult = self.xi_mult_convol
+            #xi_mult = self.xi_mult_convol
         else: 
             pk_mult = self.pk_mult
-            xi_mult = self.xi_mult
+        xi_mult = self.xi_mult
 
         if ell_max is None:
             n_ell = ell.size
@@ -559,22 +559,39 @@ class Data:
 class Chi2: 
 
     def __init__(self, data=None, model=None, parameters=None, options=None):
+            
         self.data = data
         self.model = model
         self.parameters = parameters
         self.options = options
-        self.ndata = data.y_value.size 
         
         self.setup_iminuit()
-        if 'fit_broadband' in options and options['fit_broadband'] == True:
-            bb_min = options['bb_min'] if 'bb_min' in options else -2
-            bb_max = options['bb_max'] if 'bb_max' in options else 0
-            self.setup_broadband(bb_min=bb_min, bb_max=bb_max)
+        self.setup_broadband()
+
+        self.best_pars = None
+        self.best_model = None
+        self.best_bb_pars = None 
+        self.best_broadband = None
+        self.chi2min = None
+        self.npar = None
+        self.ndof = None
+        self.rchi2min = None
+        
+        #-- Names of fields to be saved 
+        self.chi_fields = ['parameters', 'options', 
+                           'best_pars', 'best_model', 'best_bb_pars', 'best_broadband',
+                           'ndata', 'chi2min', 'npar', 'ndof', 'rchi2min']
+        self.param_fields = ['number', 'value', 'error', 'merror', 
+                             'lower_limit', 'upper_limit', 'is_fixed']
+        self.output = None
 
     def setup_iminuit(self):
 
         parameters = self.parameters 
-        
+        if parameters is None:
+            self.mig = None 
+            return 
+
         #-- Obtain list of names and values to initialise Minuit class
         pars_names = []
         pars_values = []
@@ -602,33 +619,51 @@ class Chi2:
         y_model = self.model.get_multipoles(coords['space'], coords['ell'], coords['scale'], pars)
         return y_model
     
-    def setup_broadband(self, bb_min=-2, bb_max=0):
+    def setup_broadband(self):
         ''' Setup analytical solution for best-fit polynomial nuisance terms
 	        http://pdg.lbl.gov/2016/reviews/rpp2016-rev-statistics.pdf eq. 39.22 and surrounding
         '''
+        options = self.options
+        if not options is None and 'fit_broadband' in options and options['fit_broadband'] == True:
+            bb_min = options['bb_min'] if 'bb_min' in options else -2
+            bb_max = options['bb_max'] if 'bb_max' in options else 0
+        else:
+            self.h_matrix = None
+            self.norm_matrix = None
+            return 
+
         coords = self.data.coords
         space = coords['space']
         ell = coords['ell']
         scale = coords['scale']
 
+        #-- Ensemble of unique combinations of pairs of (space, ell)
         upairs = np.unique([space, ell], axis=1)
         n_upairs = upairs.shape[1]
+        #-- The broadband is a series of powers of scale, these are the exponents
         power = np.arange(bb_min, bb_max+1) 
+        #-- Number of broadband parameters
         n_bb_pars = n_upairs * power.size
+        #-- Setup matrix, looping over all data coordinates
         h_matrix = np.zeros((scale.size, n_bb_pars))
         for row in range(scale.size):
+            #-- For this (space, ell), determine index in the unique ensemble
             col_space_ell = np.where((upairs[0]== space[row]) & (upairs[1]==ell[row]))[0][0]
+            #-- Fill the corresponding elements in the h_matrix with scale**power
             for j in range(power.size):
                 col = col_space_ell*power.size + j
-                p = power[j]
-                h_matrix[row, col] = scale[row]**p
+                h_matrix[row, col] = scale[row]**power[j]
 
+        #-- Compute normalisation of linear solver
         norm_matrix = np.linalg.inv(h_matrix.T @ self.data.inv_cova @ h_matrix)
+
         self.h_matrix = h_matrix
         self.norm_matrix = norm_matrix
 
     def fit_broadband(self, residual):
-       
+        ''' Solves for broadband parameters using a linear solver
+            and the matrices setup in setup_broadband()
+        '''
         norm_matrix = self.norm_matrix
         h_matrix = self.h_matrix 
         inv_cova = self.data.inv_cova 
@@ -639,7 +674,8 @@ class Chi2:
         return bb_pars
 
     def get_broadband(self, bb_pars):
-
+        ''' Computes the broadband function from a set of parameters
+        '''
         return self.h_matrix.dot(bb_pars)
 
     def __call__(self, p):
@@ -662,7 +698,7 @@ class Chi2:
         inv_cova = data.inv_cova
 
         #-- Add broadband function
-        if not self.options is None and self.options['fit_broadband']:
+        if not self.h_matrix is None:
             bb_pars = self.fit_broadband(y_residual)
             broadband = self.get_broadband(bb_pars)
             y_residual -= broadband
@@ -693,7 +729,7 @@ class Chi2:
         best_model = self.get_model(best_pars)
 
         #-- Add broadband 
-        if not self.options is None and self.options['fit_broadband']:
+        if not self.h_matrix is None:
             best_bb_pars = self.fit_broadband(self.data.y_value - best_model)
             best_broadband = self.get_broadband(best_bb_pars)
             n_bb_pars = best_bb_pars.size
@@ -708,13 +744,65 @@ class Chi2:
         self.best_broadband = best_broadband
 
         self.mig = mig
+        self.ndata = best_model.size 
         self.chi2min = mig.fval
         self.npar = mig.nfit + n_bb_pars
         self.ndof = self.ndata - self.npar
         self.rchi2min = self.chi2min/(self.ndof)
+    
+    def print_chi2(self):
         print(f'chi2/(ndata-npars) = {self.chi2min:.2f}/({self.ndata}-{self.npar}) = {self.rchi2min:.2f}') 
+
+    def minos(self, parameter_name):
+        self.mig.minos(parameter_name)
+
+    def print_minos(self, parameter_name, symmetrise=False, decimals=None):
+        if self.output is None:
+            self.get_output_from_minuit()
+
+        par_details = self.output['best_pars_details'][parameter_name]
+        value = par_details['value']
+        error_low, error_upp = par_details['merror']
+        error = (error_upp - error_low)/2
+
+        if not decimals is None:
+            value = f'{value:.{decimals}f}'
+            error_low = f'{-error_low:.{decimals}f}'
+            error_upp = f'{error_upp:.{decimals}f}'
+            error = f'{error:.{decimals}f}'
+
+        if symmetrise:     
+            print(f'{parameter_name}: {value} +/- {error}')
+        else:
+            print(f'{parameter_name}: {value} + {error_upp} - {error_low}')
+
+    def get_output_from_minuit(self):
+        ''' Converts outputs from iMinuit to a simple dictionary,
+            which is used to save the results. 
+        '''
+        output = {}
         
+        for field in self.chi_fields:
+            output[field] = self.__getattribute__(field)
+
+        details = {}
+        for parameter in self.mig.params:
+            details[parameter.name] = {}
+            for field in self.param_fields:
+                details[parameter.name][field] = parameter.__getattribute__(field)
+
+        output['best_pars_details'] = details
+        self.output = output
+
     def plot(self, f=None, axs=None, scale_r=2, label=None, figsize=(10, 4)):
+        ''' Plots the data and its best-fit model 
+        '''
+        if self.best_model is None:
+            print('No best-fit model found. Please run Chi2.fit()')
+            return
+        if self.data is None:
+            print('No data found. Please read a data and covariance file.')
+            return 
 
         f, axs = self.data.plot(f=f, axs=axs, scale_r=scale_r, 
                                 y_model=self.best_model,
@@ -770,3 +858,20 @@ class Chi2:
             sampler.summary
 
         chain = sampler.get_chain(flat=True)
+
+    def save(self, filename):
+        if self.output is None:
+            self.get_output_from_minuit()
+        pickle.dump(self.output, open(filename, 'wb'))
+
+    @staticmethod
+    def load(filename):
+        output = pickle.load(open(filename, 'rb'))
+        chi = Chi2()
+        #-- fill chi with output 
+        #-- todo
+        for field in chi.chi_fields:
+            chi.__setattr__(field, output[field])
+        
+        chi.output = output
+        return chi
