@@ -2,14 +2,16 @@ import matplotlib.pyplot as plt
 import baopy.bao_fitter
 
 #-- Read data files and covariance
-dat = baopy.bao_fitter.Data(data_file='Data_LRGxi_NGCSGC_0.6z1.0_postrecon_slx.txt',
-           cova_file='Covariance_LRGxi_NGCSGC_0.6z1.0_postrecon_slx.txt')
+dat = baopy.bao_fitter.Data(data_file='CorrelationFunction_data_COMB_postrecon.ecsv',
+        cova_file='ezmock_LRGpCMASS_NGCSGC_recon_covariance.ecsv')
 
 #-- Select multipoles and scale ranges
-cuts = (((dat.coords['ell'] == 0) & (dat.coords['scale'] > 50) & (dat.coords['scale'] < 150)) | 
-        ((dat.coords['ell'] == 2) & (dat.coords['scale'] > 50) & (dat.coords['scale'] < 150)) )
-        #| ((dat.coords['ell'] == 4) & (dat.coords['scale'] > 50) & (dat.coords['scale']<150)))
+space, ell, scale = dat.coords['space'], dat.coords['ell'], dat.coords['scale']
+#cuts = (space == 0 ) & ((ell==0) | (ell==2)) & ((scale > 0.002) & (scale < 0.3))
+cuts = (space == 1) & ((ell==0) | (ell==2)) & ((scale > 50) & (scale < 150))
 dat.apply_cuts(cuts)
+
+#-- Invert covariance matrix after cuts and apply correction factors 
 dat.inverse_cova(nmocks=1000)
 
 #-- Read linear power spectrum from file
