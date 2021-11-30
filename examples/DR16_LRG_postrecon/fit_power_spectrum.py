@@ -7,7 +7,7 @@ dat = baopy.bao_fitter.Data(data_file='PowerSpectra_data_NGCSGC_postrecon.ecsv',
 
 #-- Select multipoles and scale ranges from Gil-Marín et al. 2020
 space, ell, scale = dat.coords['space'], dat.coords['ell'], dat.coords['scale']
-cuts = (space == 0 ) & ((ell==0) | (ell==2)) & ((scale > 0.002) & (scale < 0.3))
+cuts = (space == 0 ) & ((ell==0) | (ell==2)) & ((scale > 0.02) & (scale < 0.3))
 #cuts |= (space == 1) & ((ell==0) | (ell==2)) & ((scale > 50) & (scale < 150))
 dat.apply_cuts(cuts)
 
@@ -52,5 +52,5 @@ chi.print_minos('alpha_para', symmetrise=False, decimals=3)
 chi.plot(scale_r=1)
 
 #-- Save results to file
-chi.save('chi_pk.pkl')
+chi.save('results_fit_power_spectrum.pkl')
 

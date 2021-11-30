@@ -7,7 +7,7 @@ dat = baopy.bao_fitter.Data(data_file='CorrelationFunction_data_COMB_postrecon.e
 
 #-- Select multipoles and scale ranges
 space, ell, scale = dat.coords['space'], dat.coords['ell'], dat.coords['scale']
-#cuts = (space == 0 ) & ((ell==0) | (ell==2)) & ((scale > 0.002) & (scale < 0.3))
+#cuts = (space == 0 ) & ((ell==0) | (ell==2)) & ((scale > 0.02) & (scale < 0.3))
 cuts = (space == 1) & ((ell==0) | (ell==2)) & ((scale > 50) & (scale < 150))
 dat.apply_cuts(cuts)
 
@@ -51,4 +51,4 @@ chi.plot()
 #plt.savefig('DR16_LRGxi_postrecon_bestfitmodel.pdf')
 
 #-- Save results to file
-chi.save('chi_xi.pkl')
+chi.save('results_fit_correlation_function.pkl')
