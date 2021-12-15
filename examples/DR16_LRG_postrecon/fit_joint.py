@@ -28,7 +28,7 @@ parameters = {'alpha_para':{'value':1.,     'error':0.1,  'limit_low': 0.5, 'lim
               'sigma_perp':{'value':2.,   'fixed':True}, #-- Value used in Gil-Marín et al. 2020
               #'sigma_para':{'value':7.31 ,  'fixed':True}, #-- Value used Bautista et al. 2020
               #'sigma_perp':{'value':5.53,   'fixed':True}, #-- Value used in Bautista et al. 2020
-              'sigma_s'   :{'value':0.,     'fixed':True} 
+              'sigma_fog'   :{'value':0.,     'fixed':True} 
               }
 
 #-- Some extra options, e.g., broadband
@@ -48,11 +48,20 @@ chi.minos('alpha_perp')
 chi.minos('alpha_para')
 
 #-- Print the errors
-chi.print_minos('alpha_perp', decimals=5)
-chi.print_minos('alpha_para', decimals=5)
+chi.print_minos('alpha_perp', decimals=5, symmetrise=False)
+chi.print_minos('alpha_para', decimals=5, symmetrise=False)
 
 #-- Plot best-fit model and save it 
 chi.plot()
+plt.savefig('results_fit_joint.pdf')
+
+#-- Get contours of 1 and 2 sigma
+chi.get_contours('alpha_perp', 'alpha_para', confidence_level=0.68, n_points=30)
+chi.get_contours('alpha_perp', 'alpha_para', confidence_level=0.95, n_points=30)
+
+#-- Plot contours
+chi.plot_contours('alpha_perp', 'alpha_para')
+plt.savefig('results_fit_joint_contours.pdf')
 
 #-- Save results to file
 chi.save('results_fit_joint.pkl')

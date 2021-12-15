@@ -609,7 +609,8 @@ class Chi2:
         #-- Names of fields to be saved 
         self.chi_fields = ['parameters', 'options', 
                            'best_pars', 'best_model', 'best_bb_pars', 'best_broadband',
-                           'ndata', 'chi2min', 'npar', 'ndof', 'rchi2min']
+                           'ndata', 'chi2min', 'npar', 'ndof', 'rchi2min',
+                           'contours']
         self.param_fields = ['number', 'value', 'error', 'merror', 
                              'lower_limit', 'upper_limit', 'is_fixed']
         self.output = None
@@ -804,6 +805,38 @@ class Chi2:
             print(f'{parameter_name}: {value} +/- {error}')
         else:
             print(f'{parameter_name}: {value} + {error_upp} - {error_low}')
+
+    def get_contours(self, parameter_name_1, parameter_name_2, confidence_level=0.685, n_points=30):
+        if self.output is None:
+            self.get_output_from_minuit()
+        output = self.output 
+
+        contour_xy = self.mig.mncontour(parameter_name_1, parameter_name_2, 
+                                    cl=confidence_level, size=n_points)
+        
+        if not 'contours' in output:
+            output['contours'] = {}
+        key = (parameter_name_1, parameter_name_2)
+        if not key in output['contours']:
+            output['contours'][key] = {}
+        output['contours'][key][confidence_level] = contour_xy
+
+    def plot_contours(self, parameter_name_1, parameter_name_2):
+
+        if self.output is None or not 'contours' in self.output:
+            print('Error: Need to compute contours first.')
+            return
+
+        contours = self.output['contours'][parameter_name_1, parameter_name_2]
+        confidence_levels = np.sort(list(contours.keys()))
+
+        plt.figure()      
+        for confidence_level in confidence_levels[::-1]:
+            contour = contours[confidence_level]
+            plt.fill(contour[:, 0], contour[:, 1], alpha=0.3, color='C0', label=f'{confidence_level}')
+        plt.xlabel(parameter_name_1)
+        plt.ylabel(parameter_name_2)
+        #plt.legend()
 
     def get_output_from_minuit(self):
         ''' Converts outputs from iMinuit to a simple dictionary,

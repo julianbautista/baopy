@@ -25,13 +25,13 @@ parameters = {'alpha_para':{'value':1.,     'error':0.1,  'limit_low': 0.5, 'lim
               'sigma_rec' :{'value':15.,    'fixed':True}, 
               'sigma_para':{'value':7.31 ,  'fixed':True}, 
               'sigma_perp':{'value':5.53,   'fixed':True}, 
-              'sigma_s'   :{'value':0.,     'fixed':True} 
+              'sigma_fog' :{'value':0.,     'fixed':True} 
               }
 
 #-- Some extra options, e.g., broadband
 options = {'fit_broadband': True, 
-           'bb_min': -2, 
-           'bb_max': 0}
+           'bb_min': -2, #-- Bautista et al. uses -2 
+           'bb_max': 1} #-- Bautista et al. uses 0
 
 #-- Initialise the fitter
 chi = baopy.bao_fitter.Chi2(data=dat, model=mod, parameters=parameters, options=options)
@@ -48,7 +48,15 @@ chi.print_minos('alpha_para', symmetrise=False, decimals=3)
 
 #-- Plot best-fit model and save it 
 chi.plot()
-#plt.savefig('DR16_LRGxi_postrecon_bestfitmodel.pdf')
+plt.savefig('results_fit_correlation_function.pdf')
+
+#-- Get contours of 1 and 2 sigma
+chi.get_contours('alpha_perp', 'alpha_para', confidence_level=0.68, n_points=30)
+chi.get_contours('alpha_perp', 'alpha_para', confidence_level=0.95, n_points=30)
+
+#-- Plot contours
+chi.plot_contours('alpha_perp', 'alpha_para')
+plt.savefig('results_fit_correlation_function_contours.pdf')
 
 #-- Save results to file
 chi.save('results_fit_correlation_function.pkl')

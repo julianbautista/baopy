@@ -24,14 +24,14 @@ parameters = {'alpha_para':{'value':1.,     'error':0.1,  'limit_low': 0.5, 'lim
               'bias'      :{'value':2.3,    'error': 0.1, 'limit_low': 1,   'limit_upp': 4.,  'fixed': False},
               'beta'      :{'value':0.35,   'fixed':False}, 
               'sigma_rec' :{'value':15.,    'fixed':True}, 
-              'sigma_para':{'value':7.0 ,   'fixed':True}, #-- Value used in Gil-Marín et al. 2020
+              'sigma_para':{'value':7.0,   'fixed':True}, #-- Value used in Gil-Marín et al. 2020
               'sigma_perp':{'value':2.0,    'fixed':True}, #-- Value used in Gil-Marín et al. 2020
-              'sigma_s'   :{'value':0.,     'fixed':True} 
+              'sigma_fog' :{'value':0.,     'fixed':True} 
               }
 
 #-- Some extra options, e.g., broadband
 options = {'fit_broadband': True, 
-           'bb_min': -1, # Gil-Marin et al. uses -1
+           'bb_min': -2, # Gil-Marin et al. uses -1
            'bb_max': 1, # Gil-Marin et al. uses 1
            }
 
@@ -50,6 +50,15 @@ chi.print_minos('alpha_para', symmetrise=False, decimals=3)
 
 #-- Plot best-fit model and save it 
 chi.plot(scale_r=1)
+plt.savefig('results_fit_power_spectrum.pdf')
+
+#-- Get contours of 1 and 2 sigma
+chi.get_contours('alpha_perp', 'alpha_para', confidence_level=0.68, n_points=30)
+chi.get_contours('alpha_perp', 'alpha_para', confidence_level=0.95, n_points=30)
+
+#-- Plot contours
+chi.plot_contours('alpha_perp', 'alpha_para')
+plt.savefig('results_fit_power_spectrum_contours.pdf')
 
 #-- Save results to file
 chi.save('results_fit_power_spectrum.pkl')
