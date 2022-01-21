@@ -845,8 +845,10 @@ class Chi2:
         output = {}
         
         for field in self.chi_fields:
-            output[field] = self.__getattribute__(field)
-
+            try:
+                output[field] = self.__getattribute__(field)
+            except:
+                pass
         details = {}
         for parameter in self.mig.params:
             details[parameter.name] = {}
