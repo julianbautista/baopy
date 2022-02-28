@@ -241,7 +241,9 @@ class Model:
 
 
 class BAO(Model):
-
+    ''' Implements the BAO model from Bautista et al. 2021 and Gil-Marin et al. 2020
+        Written by Julian Bautista
+    '''
     def __init__(self, pk_file=None): 
         super().__init__()
 
@@ -478,7 +480,11 @@ class BAO(Model):
             self.get_multipoles_window()
         
 class RSD_TNS(Model):
+    ''' 
+    Implements the TNS model
+    Written by Vincenzo Aronica and Julian Bautista
 
+    '''
     def __init__(self, 
         pk_lin_file=None, 
         pk_regpt_file=None, 
