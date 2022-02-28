@@ -1,4 +1,4 @@
-import baopy.bao_fitter
+import baopy.fitter
 import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon
 
@@ -7,11 +7,11 @@ from matplotlib.patches import Polygon
 #-- fit_power_spectrum.py
 #-- fit_joint.py
 
-chi_xi = baopy.bao_fitter.Chi2.load('results_fit_correlation_function.pkl')
+chi_xi = baopy.fitter.Chi2.load('results_fit_correlation_function.pkl')
 
-chi_pk = baopy.bao_fitter.Chi2.load('results_fit_power_spectrum.pkl')
+chi_pk = baopy.fitter.Chi2.load('results_fit_power_spectrum.pkl')
 
-chi_pkxi = baopy.bao_fitter.Chi2.load('results_fit_joint.pkl')
+chi_pkxi = baopy.fitter.Chi2.load('results_fit_joint.pkl')
 
 
 names = [r'$P_\ell$', r'$\xi_\ell$', 'Joint']

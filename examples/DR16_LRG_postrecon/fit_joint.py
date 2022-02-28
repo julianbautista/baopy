@@ -1,8 +1,9 @@
 import matplotlib.pyplot as plt
-import baopy.bao_fitter 
+import baopy.fitter 
+import baopy.models 
 
 #-- Read data files and covariance
-dat = baopy.bao_fitter.Data(data_file='Correlations_data_NGCSGC_postrecon.ecsv',
+dat = baopy.fitter.Data(data_file='Correlations_data_NGCSGC_postrecon.ecsv',
         cova_file='ezmock_LRGpCMASS_NGCSGC_recon_covariance.ecsv')
 
 #-- Select multipoles and scale ranges
@@ -15,7 +16,7 @@ dat.apply_cuts(cuts)
 dat.inverse_cova(nmocks=1000)
 
 #-- Read linear power spectrum from file
-mod = baopy.bao_fitter.Model('pk_camb_z0.698_challenge.txt')
+mod = baopy.models.BAO('pk_camb_z0.698_challenge.txt')
 mod.read_window_function('Window_NGCSGC_public.txt')
 
 #-- Setup parameters, which ones are fixed, limits
@@ -39,7 +40,7 @@ options = {'fit_broadband': True,
            'bb_max': 1}
 
 #-- Initialise the fitter
-chi = baopy.bao_fitter.Chi2(data=dat, model=mod, parameters=parameters, options=options)
+chi = baopy.fitter.Chi2(data=dat, model=mod, parameters=parameters, options=options)
 chi.fit()
 chi.print_chi2()
 
