@@ -58,7 +58,8 @@ class Model:
         self.mu_2d = None 
         self.k_2d = None
         self.ell = None 
-
+        self.pk_mult = None 
+        self.xi_mult = None
         self.window_mult = None
 
     def get_multipoles(self, data_space, data_ell, data_x, pars):
@@ -619,13 +620,16 @@ class RSD_TNS(Model):
                  bs2 * pk_bias_2d[6] + 
                  b3nl * pk_bias_2d[7])
 
-        pk_rsd = 1/alpha_para/alpha_perp**2*fog**2
+        #-- Jacobian of AP effect
+        pk_rsd = 1/alpha_para/alpha_perp**2
+        #-- Fingers of God
+        pk_rsd *= fog**2
+        #-- Final model 
         pk_rsd *= (pk_g_dd + 
                    pk_g_dt * 2 * amu**2 * beta * b1  + 
                    pk_regpt_2d[2] * (amu**2 * beta * b1)**2 + 
                    b1**3*A + 
                    b1**4*B )
-        #P_rsd = fog**2*(Pg_dd + 2*mu2*beta*b1*Pg_dt + (mu2*beta*b1)**2*pk_tt_2D + b1**3*A + b1**4*B)
 
         #-- Multipoles of pk
         pk_mult = multipoles(pk_rsd, ell_max=ell_max)
