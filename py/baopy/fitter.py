@@ -1,9 +1,7 @@
 import numpy as np
 import pylab as plt
 import pickle
-import hankl
 import iminuit
-import scipy.interpolate 
 import scipy.linalg
 from scipy.optimize import curve_fit
 

@@ -486,26 +486,30 @@ class RSD_TNS(Model):
 
     '''
     def __init__(self, 
-        pk_lin_file=None, 
         pk_regpt_file=None, 
         bias_file = None, 
         a2loop_file=None, 
-        b2loop_file=None
+        b2loop_file=None,
+        kmax_cutoff=0.5,
         ): 
         super().__init__()
-        
-        k, pk_lin = np.loadtxt(pk_lin_file, unpack=True)
+    
+        #-- Read pyregpt power spectra parameters
+        pk_regpt = np.loadtxt(pk_regpt_file, unpack=True)
+        k = pk_regpt[0]
+        pk_regpt = pk_regpt[1:]
 
         #-- Fourier transform the power spectrum to correlation function
-        r, xi = hankl.P2xi(k, pk_lin, l=0, lowring=True)
-        xi = xi.real
-
-        #-- Read pyregpt power spectra parameters
-        pk_regpt = np.loadtxt(pk_regpt_file, unpack=True)[1:]
+        xi_regpt = np.zeros_like(pk_regpt)
+        for i in range(3):
+            r, xi = hankl.P2xi(k, pk_regpt[i], l=0, lowring=True)
+            xi_regpt[i] = xi.real
 
         #-- Read bias expansion terms
         #-- pk_b2d, pk_bs2d, pk_b22, pk_b2s2, pk_bs22, pk_b2t, pk_bs2t, sigma3sq = np.loadtxt(bias_file, unpack=True)
         pk_bias = np.loadtxt(bias_file, unpack=True)[1:]
+        w = k>kmax_cutoff
+        pk_bias[:, w] *= np.exp( - (k[w]/kmax_cutoff-1)**2)
 
         a_terms = np.loadtxt(a2loop_file, unpack=True)[1:]
         #A[0,:],A[1,:],A[2,:],A[3,:],A[4,:]
@@ -515,43 +519,84 @@ class RSD_TNS(Model):
 
         self.r = r
         self.k = k
-        self.pk_lin = pk_lin
+        #self.pk_lin = pk_lin
         self.pk_regpt = pk_regpt
         self.pk_bias = pk_bias
         self.a_terms = a_terms
         self.b_terms = b_terms
       
+        self.xi_regpt = xi_regpt
         self.mu = None
         self.mu_2d = None 
         self.k_2d = None
         self.window_mult = None
+
+    def plot(self):
+
+        plt.figure()
+        k = self.k 
+        plt.plot(k, self.pk_regpt.T)
+        plt.legend([r'$P_{\delta \delta}$', r'$P_{\delta \theta}$', r'$P_{\theta \theta}$'])
+        plt.xscale('log')
+        plt.title('RegPT 2-loop')
+
+        plt.figure()
+        plt.plot(k, self.pk_bias.T)
+        plt.xscale('log')
+        plt.title('Bias terms')
+        plt.legend([r'$P_{b2, \delta}$',
+            r'$P_{bs2, \delta}$',
+            r'$P_{b22}$',
+            r'$P_{b2s2}$',
+            r'$P_{bs22}$',
+            r'$P_{b2, \theta}$',
+            r'$P_{bs2, \theta}$',
+            r'$\sigma_3^2 P_{\rm lin}}$',
+            ])
+
+        plt.figure()
+        plt.plot(k, self.a_terms.T)
+        plt.xscale('log')
+        leg = [f'A{i}' for i in range(0, 5)]
+        plt.legend(leg)
+        plt.title('RSD A terms')
+
+        plt.figure()
+        plt.plot(k, self.b_terms.T)
+        plt.xscale('log')
+        leg = [f'B{i}' for i in range(0, 8)]
+        plt.legend(leg)
+        plt.title('RSD B terms')
 
     def get_pk_2d(self, pars, ell_max=4):
         ''' Compute P(k, mu)  eq. (2.198) of De Mattia Thesis 
         Input
         -----
         pars (dict): available parameters are:
-                     b1 = linear bias
-                     b2 = second order bias
-                     bs2 = other bias paramater
-                     b3nl = other bias paramater
-                     beta = redshift space distortion parameter
-                     sigma_fog - Finger's of God damping
+            alpha_para = scaling of radial separations
+            alpha_perp = scaling of transverse separations
+            b1 = linear bias
+            b2 = second order bias
+            bs2 = other bias paramater
+            b3nl = other bias paramater
+            beta = redshift space distortion parameter
+            sigma_fog = Finger's of God damping
+            shot_noise = value for shot noise power
         '''
 
-        #-- Read free parameters
         b1 = pars['b1']
         b2 = pars['b2']
-        #bs2 = pars['bs2']
-        #b3nl = pars['b3nl']
+
+        #-- If not free, we fix bs2 and b3nl (eq. (2.157)/(2.158) DeMattia Thesis) 
+        bs2 = pars['bs2'] if 'bs2' in pars else -4/7*(b1-1)
+        b3nl = pars['b3nl'] if 'b3nl' in pars else 32/315 * (b1-1)
+
         beta = pars['beta']
         shot_noise = pars['shot_noise']
+        
         alpha_perp = pars['alpha_perp']
         alpha_para = pars['alpha_para']
 
-        #-- We fix bs2 and b3nl (eq. (2.157)/(2.158) DeMattia Thesis) 
-        bs2= -4/7 * (b1-1)
-        b3nl = 32/315 * (b1-1)
 
         k = self.k
 
@@ -586,8 +631,7 @@ class RSD_TNS(Model):
         else:
             fog = 1.
 
-
-
+        #-- RSD correction terms
         amu = amu[:, None]
         A = (beta    *  amu**2 * a_terms_2d[0] + 
              beta**2 *  amu**2 * a_terms_2d[1] +
@@ -607,10 +651,6 @@ class RSD_TNS(Model):
             beta**4 *  amu**8 * b_terms_2d[8]   
             )
 
-        ## pk_dd, pk_dt, pk_tt 
-
-        ## pk_b2d, pk_bs2d, pk_b22, pk_b2s2, pk_bs22, pk_b2t, pk_bs2t, sigma3sq
-        
         pk_g_dd = (
             b1**2 * pk_regpt_2d[0] + 
             2*b1*b2 * pk_bias_2d[0] + 
@@ -627,7 +667,7 @@ class RSD_TNS(Model):
                  b3nl * pk_bias_2d[7])
 
         #-- Jacobian of AP effect
-        pk_rsd = 1/alpha_para/alpha_perp**2
+        pk_rsd = 1 #/alpha_para/alpha_perp**2
         #-- Fingers of God
         pk_rsd *= fog**2
         #-- Final model 
@@ -649,8 +689,13 @@ class RSD_TNS(Model):
 
         self.ell = ell
         self.mu = mu
+
+        #-- 2D quantities
         self.mu_2d = mu_2d 
         self.k_2d = k_2d
+        self.pk_2d = pk_rsd
+
+        #-- Multipole quantities
         self.r_mult = r
         self.ell = ell
         self.pk_mult = pk_mult
