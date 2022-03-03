@@ -120,6 +120,16 @@ class Data:
 
         return f, axs
     
+    def plot_cova(self, normalise=True, **kwargs):
+
+        cova = self.cova 
+        corr = cova/np.sqrt(np.outer(np.diag(cova), np.diag(cova)))
+ 
+        z = corr if normalise else cova
+        plt.figure()
+        plt.pcolormesh(z, **kwargs)
+        plt.colorbar()
+
 class Chi2: 
 
     def __init__(self, data=None, model=None, parameters=None, options=None):
