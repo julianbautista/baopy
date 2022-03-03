@@ -532,7 +532,8 @@ class RSD_TNS(Model):
         self.window_mult = None
 
     def plot(self):
-
+        ''' This just plots all terms
+        '''
         plt.figure()
         k = self.k 
         plt.plot(k, self.pk_regpt.T)
@@ -689,8 +690,11 @@ class RSD_TNS(Model):
 
         self.ell = ell
         self.mu = mu
-
+        self.amu = amu 
+        
         #-- 2D quantities
+        self.amu_2d = amu_2d
+        self.ak_2d = ak_2d
         self.mu_2d = mu_2d 
         self.k_2d = k_2d
         self.pk_2d = pk_rsd
