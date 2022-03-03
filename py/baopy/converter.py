@@ -26,3 +26,44 @@ def convert(k=None, pk_mono=None, pk_quad=None, pk_hexa=None,
                     names=['space', 'ell', 'scale', 'correlation'], 
                     dtype=[int, int, float, float])
     return data_out
+
+def covariance(list_of_files):
+    ''' Reads a list of files in ecsv format (defined above) and
+        computes a mean and covariance matrix to be exported in ecsv 
+        format for baopy
+    '''
+
+    #-- Reads files and stores correlations
+    correlations = []
+    for fi in list_of_files:
+        data = Table.read(fi)
+        correlations.append(data['correlation'])
+    correlations = np.array(correlations)
+
+    #-- Computes average and covariance matrix
+    mean = np.mean(correlations, axis=0)
+    cova = np.cov(correlations.T)
+
+    #-- Makes a table for average
+    mean_out = data.copy()
+    mean_out['correlation'] = mean
+
+    #-- Makes a table for covariance
+    coords = data['space', 'ell', 'scale']
+    nbins = len(coords)
+    rows = []
+    for i in range(nbins):
+        row_i = [coords[i][key] for key in ['space', 'ell', 'scale']]
+        for j in range(nbins):
+            row_j = [coords[j][key] for key in ['space', 'ell', 'scale']]
+            rows.append(row_i+row_j+[cova[i, j]])
+    rows = np.array(rows)
+
+    cova_out = Table(data=rows, 
+        names=['space_1', 'ell_1', 'scale_1', 'space_2', 'ell_2', 'scale_2', 'covariance'],
+        dtype=[int, int, float, int, int, float, float])
+    
+    return mean_out, cova_out
+    
+
+
