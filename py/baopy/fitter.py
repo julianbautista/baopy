@@ -477,10 +477,9 @@ class Chi2:
     def load(filename):
         output = pickle.load(open(filename, 'rb'))
         chi = Chi2()
-        #-- fill chi with output 
-        #-- todo
         for field in chi.chi_fields:
-            chi.__setattr__(field, output[field])
+            if field in output:
+                chi.__setattr__(field, output[field])
         
         chi.output = output
         return chi

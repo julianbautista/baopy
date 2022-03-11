@@ -106,12 +106,16 @@ class Model:
         return model
 
     def plot_multipoles(self, f=None, axs=None, ell_max=None, 
-        k_range=(0., 0.5), r_range=(0, 200), convolved=True, ls=None):
+        k_range=(0., 0.5), r_range=(0, 200), 
+        scale_k=1, scale_r=2, convolved=True, ls=None):
 
         ell = self.ell
         n_ell = ell.size
         k = self.k
         r = self.r
+        wr = (r>=r_range[0]) & (r<=r_range[1])
+        wk = (k>=k_range[0]) & (k<=k_range[1])
+
         if convolved and not self.window_mult is None:
             pk_mult = self.pk_mult_convol
             #xi_mult = self.xi_mult_convol
@@ -128,12 +132,16 @@ class Model:
             f, axs = plt.subplots(ncols=2, nrows=n_ell, figsize=(8, 7), sharex='col')
 
         for i in range(n_ell):
-            axs[i, 0].plot(k, pk_mult[i]*k**2, color=f'C{i}', ls=ls, label=r'$\ell=$'+f'{ell[i]}')
+            x = k[wk] 
+            y = pk_mult[i, wk]*x**scale_k
+            axs[i, 0].plot(x, y, color=f'C{i}', ls=ls, label=r'$\ell=$'+f'{ell[i]}')
             axs[i, 0].set_xlim(k_range)
             axs[i, 0].legend()
         
         for i in range(n_ell):
-            axs[i, 1].plot(r, xi_mult[i]*r**2, color=f'C{i}', ls=ls, label=r'$\ell=$'+f'{ell[i]}')
+            x = r[wr]
+            y = xi_mult[i, wr] * x**scale_r
+            axs[i, 1].plot(x, y, color=f'C{i}', ls=ls, label=r'$\ell=$'+f'{ell[i]}')
             axs[i, 1].set_xlim(r_range)
             axs[i, 1].legend()
 
@@ -592,7 +600,9 @@ class RSD_TNS(Model):
         bs2 = pars['bs2'] if 'bs2' in pars else -4/7*(b1-1)
         b3nl = pars['b3nl'] if 'b3nl' in pars else 32/315 * (b1-1)
 
-        beta = pars['beta']
+        #beta = pars['beta']
+        f = pars['f']
+        beta = f/b1
         shot_noise = pars['shot_noise']
         
         alpha_perp = pars['alpha_perp']
@@ -667,6 +677,8 @@ class RSD_TNS(Model):
                  bs2 * pk_bias_2d[6] + 
                  b3nl * pk_bias_2d[7])
 
+        pk_g_tt = pk_regpt_2d[2]
+
         #-- Jacobian of AP effect
         pk_rsd = 1 #/alpha_para/alpha_perp**2
         #-- Fingers of God
@@ -674,7 +686,7 @@ class RSD_TNS(Model):
         #-- Final model 
         pk_rsd *= (pk_g_dd + 
                    pk_g_dt * 2 * amu**2 * beta * b1  + 
-                   pk_regpt_2d[2] * (amu**2 * beta * b1)**2 + 
+                   pk_g_tt * (amu**2 * beta * b1)**2 + 
                    b1**3*A + 
                    b1**4*B )
 
