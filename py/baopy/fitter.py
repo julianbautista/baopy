@@ -142,7 +142,8 @@ class Chi2:
         self.setup_iminuit()
         self.setup_broadband()
 
-        self.best_pars = None
+        self.best_pars_value = None
+        self.best_pars_error = None
         self.best_model = None
         self.best_bb_pars = None 
         self.best_broadband = None
@@ -153,7 +154,8 @@ class Chi2:
         
         #-- Names of fields to be saved 
         self.chi_fields = ['parameters', 'options', 
-                           'best_pars', 'best_model', 'best_bb_pars', 'best_broadband',
+                           'best_pars_value', 'best_pars_error', 
+                           'best_model', 'best_bb_pars', 'best_broadband',
                            'ndata', 'chi2min', 'npar', 'ndof', 'rchi2min',
                            'contours']
         self.param_fields = ['number', 'value', 'error', 'merror', 
@@ -300,8 +302,10 @@ class Chi2:
         mig.migrad()
 
         #-- Recover best-fit parameters and model 
-        best_pars = {k: mig.params[k].value for k in mig.parameters}
-        best_model = self.get_model(best_pars)
+        best_pars_value = {k: mig.params[k].value for k in mig.parameters}
+        best_pars_error = {k: mig.params[k].error for k in mig.parameters}
+        best_model = self.get_model(best_pars_value)
+        print(best_pars_error)
 
         #-- Add broadband 
         if not self.h_matrix is None:
@@ -313,7 +317,8 @@ class Chi2:
             best_bb_pars = None 
             n_bb_pars = 0
 
-        self.best_pars = best_pars
+        self.best_pars_value = best_pars_value
+        self.best_pars_error = best_pars_error
         self.best_model = best_model + best_broadband
         self.best_bb_pars = best_bb_pars 
         self.best_broadband = best_broadband
@@ -442,11 +447,11 @@ class Chi2:
         print('\nSetting up starting point of walkers:')
         start = np.zeros((nwalkers, npars))
         for j, par in enumerate(pars_free):
-            if par in chi2.best_pars and chi2.best_pars[par]['error']>0.:
+            if par in chi2.best_pars_value and chi2.best_pars_value[par]['error']>0.:
                 limit_low = parameters[par]['limit_low']
                 limit_upp = parameters[par]['limit_upp']
-                value = chi2.best_pars[par]['value']
-                error = chi2.best_pars[par]['error']
+                value = chi2.best_pars_value[par]['value']
+                error = chi2.best_pars_value[par]['error']
                 limit_low = np.max([limit_low, value-10*error])
                 limit_upp = np.min([limit_upp, value+10*error])
                 print('Randomly sampling for', par, 'between', limit_low, limit_upp )
