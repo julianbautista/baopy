@@ -35,11 +35,13 @@ options = {'fit_broadband': True,
            'bb_max': 1} #-- Bautista et al. uses 0
 
 #-- Initialise the fitter
+print('Computing best-fit parameters...')
 chi = baopy.fitter.Chi2(data=dat, model=mod, parameters=parameters, options=options)
 chi.fit()
 chi.print_chi2()
 
 #-- Compute precise errors for the alphas
+print('Computing precise error bars...')
 chi.minos('alpha_para')
 chi.minos('alpha_perp')
 
@@ -48,10 +50,11 @@ chi.print_minos('alpha_perp', symmetrise=False, decimals=3)
 chi.print_minos('alpha_para', symmetrise=False, decimals=3)
 
 #-- Plot best-fit model and save it 
-chi.plot()
+chi.plot(power_r=2)
 plt.savefig('results_fit_correlation_function.pdf')
 
 #-- Get contours of 1 and 2 sigma
+print('Computing 2D contours...')
 chi.get_contours('alpha_perp', 'alpha_para', confidence_level=0.68, n_points=30)
 chi.get_contours('alpha_perp', 'alpha_para', confidence_level=0.95, n_points=30)
 

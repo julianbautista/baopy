@@ -20,7 +20,7 @@ class Data:
         if cova_file is not None:
             self.read_cova(cova_file)
         if self.coords is not None and self.cova_coords is not None:
-            self.cova = self.match_cova(self.coords, self.cova_coords, self.cova_values)
+            self.match_cova()
 
     def read_data(self, data_file):
         ''' Reads data vector from .ecsv format
@@ -122,7 +122,7 @@ class Data:
             inv_cova *= correction
         self.inv_cova = inv_cova
     
-    def plot(self, y_model=None, f=None, axs=None, power_x=2, label=None, figsize=(7, 8)):
+    def plot(self, y_model=None, f=None, axs=None, power_k=1, power_r=2, label=None, figsize=(7, 8)):
 
         coords = self.coords
         space = np.unique(coords['space'])
@@ -137,10 +137,21 @@ class Data:
             f, axs = plt.subplots(ncols=n_space, nrows=n_ell, figsize=(8, 7), sharex='col', squeeze=False)
 
         xlabels = [r'$k$ [$h$ Mpc$^{-1}$]', r'$r$ [$h^{-1}$ Mpc]']
-        if power_x == 0:
-            titles = [r'$k^2 P_\ell(k)$', r'$r^2 \xi_\ell(k)$']
+        if power_k == 0:
+            title_k = r'$P_\ell(k)$'
+        elif power_k == 1:
+            title_k = fr'$k P_\ell(k)$'
         else:
-            titles = [fr'$k^{power_x} P_\ell(k)$', fr'$r^{power_x} \xi_\ell(k)$']
+            title_k = fr'$k^{power_k} P_\ell(k)$'
+
+        if power_r == 0:
+            title_r =  r'$\xi_\ell(k)$'
+        elif power_r == 1:
+            title_r = fr'$r \xi_\ell(k)$'
+        else:
+            title_r =  fr'$r^{power_r} \xi_\ell(k)$'
+        titles = [title_k, title_r]
+
 
         for col in range(n_space):
             w_space = coords['space'] == space[col]
@@ -148,7 +159,7 @@ class Data:
                 w_ell = coords['ell'] == ell[row]
                 w = w_space & w_ell
                 x = coords['scale'][w]
-                
+                power_x = power_k if space[col] == 0 else power_r
                 axs[row, col].errorbar(x, values[w]*x**power_x, data_error[w]*x**power_x, fmt='o',
                     color=f'C{row}')
                 if not y_model is None:
@@ -474,7 +485,7 @@ class Chi2:
         output['best_pars_details'] = details
         self.output = output
 
-    def plot(self, f=None, axs=None, power_x=2, label=None, figsize=(10, 4)):
+    def plot(self, f=None, axs=None, power_k=1, power_r=2, label=None, figsize=(10, 4)):
         ''' Plots the data and its best-fit model 
         '''
         if self.best_model is None:
@@ -484,7 +495,8 @@ class Chi2:
             print('No data found. Please read a data and covariance file.')
             return 
 
-        f, axs = self.data.plot(f=f, axs=axs, power_x=power_x, 
+        f, axs = self.data.plot(f=f, axs=axs, 
+                                power_k=power_k, power_r=power_r, 
                                 y_model=self.best_model,
                                 figsize=figsize, label=label)
         return f, axs
