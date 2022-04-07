@@ -244,7 +244,6 @@ class Model:
             k, pk = hankl.xi2P(self.r, xi_convol[i], l=ell[i], lowring=True)
             pk_convol[i] = pk.real
 
-        self.xi_mult_convol = xi_convol 
         self.pk_mult_convol = pk_convol 
 
 
@@ -461,7 +460,6 @@ class BAO(Model):
         pk_2d *= kaiser
         pk_2d *= fog**2 
         pk_2d *= beam
-        pk_2d /= (alpha_perp**2*alpha_para)
 
         #-- Multipoles of pk
         pk_mult = multipoles(pk_2d, ell_max=ell_max)
@@ -473,6 +471,8 @@ class BAO(Model):
             r, xi = hankl.P2xi(k, pk_mult[i], l=ell[i], lowring=True)
             xi_mult[i] = xi.real
 
+        pk_2d /= (alpha_perp**2*alpha_para)
+        pk_mult /= (alpha_perp**2*alpha_para)
             
         self.ell = ell
         self.mu = mu
@@ -486,6 +486,8 @@ class BAO(Model):
         
         if not self.window_mult is None:
             self.get_multipoles_window()
+            self.pk_mult_convol *= 1/(alpha_perp**2*alpha_para)
+
         
 class RSD_TNS(Model):
     ''' 
@@ -679,8 +681,8 @@ class RSD_TNS(Model):
 
         pk_g_tt = pk_regpt_2d[2]
 
-        #-- Jacobian of AP effect
-        pk_rsd = 1 #/alpha_para/alpha_perp**2
+        #-- Build final model
+        pk_rsd = 1 
         #-- Fingers of God
         pk_rsd *= fog**2
         #-- Final model 
@@ -700,6 +702,10 @@ class RSD_TNS(Model):
             r, xi = hankl.P2xi(k, pk_mult[i], l=ell[i], lowring=True)
             xi_mult[i] = xi.real
 
+        #-- AP Jacobian for pk only 
+        pk_mult *= 1/alpha_para/alpha_perp**2
+        pk_rsd *= 1/alpha_para/alpha_perp**2
+        
         self.ell = ell
         self.mu = mu
         self.amu = amu 
@@ -709,7 +715,7 @@ class RSD_TNS(Model):
         self.ak_2d = ak_2d
         self.mu_2d = mu_2d 
         self.k_2d = k_2d
-        self.pk_2d = pk_rsd
+        self.pk_2d = pk_rsd 
 
         #-- Multipole quantities
         self.r_mult = r
@@ -719,3 +725,5 @@ class RSD_TNS(Model):
 
         if not self.window_mult is None:
             self.get_multipoles_window()
+            self.pk_mult_convol *= 1/alpha_para/alpha_perp**2
+
