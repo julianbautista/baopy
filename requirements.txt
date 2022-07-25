@@ -3,3 +3,4 @@ scipy
 iminuit
 hankl
 astropy
+myst-parser
