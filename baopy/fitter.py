@@ -1,3 +1,4 @@
+''' Module containing the main fitter class and a data handler '''
 import numpy as np
 import pylab as plt
 import pickle
@@ -9,9 +10,25 @@ from astropy.table import Table
 plt.ion()
 
 class Data: 
+    ''' Class dealing with data vector and covariance matrices 
+        
+        It contains functions to mask bins or plotting, and it 
+        is mostly used in the Chi class
+    '''
 
     def __init__(self, data_file=None, cova_file=None):
+        ''' Initialises the object by reading data vector and covariances
+
+        Parameters
+        ----------
         
+        data_file : str, optional 
+            Name of (.ecsv) file containing data vector and its coordinates
+        cova_file : str, optional 
+            Name of (.ecsv) file containing covariance matrix 
+
+        '''
+
         self.coords = None
         self.values = None 
         self.cova = None 
@@ -24,16 +41,20 @@ class Data:
 
     def read_data(self, data_file):
         ''' Reads data vector from .ecsv format
+            
             Convention is :
-                - space: 0 (Fourier-space) or 1 (Configuration-space)
-                - ell: multipole order 
-                - scale: k [h/Mpc] (Fourier-space) or r [Mpc/h] (Configuration-space)
+            - space: 0 (Fourier-space) or 1 (Configuration-space)
+            - ell: multipole order 
+            - scale: k [h/Mpc] (Fourier-space) or r [Mpc/h] (Configuration-space)
             See py/baopy/converter.py 
 
-            Input 
-            -----
+            Parameters 
+            ----------
             data_file: str 
+                Name of .ecsv file containing data vector 
+
         '''
+
         data = Table.read(data_file)
         coords = { 'space': data['space'].data,
                         'ell':   data['ell'].data,
@@ -45,8 +66,14 @@ class Data:
 
     def read_cova(self, cova_file):
         ''' Reads covariance matrix from .ecsv format
-        
+
+            Parameters
+            ----------
+
+            cova_file: str 
+                Name of .ecsv file containing covariance matrix and its coordinates
         '''
+
         cova = Table.read(cova_file)
 
         cova_coords = { 'space_1': cova['space_1'].data,
@@ -65,6 +92,10 @@ class Data:
         ''' Makes sure that data vector and covariance have matching coordinates 
         
         '''
+
+        assert self.coords is not None 
+        assert self.cova_coords is not None 
+
         data_coords = self.coords
         cova_coords = self.cova_coords 
         cova_values = self.cova_values
@@ -99,10 +130,13 @@ class Data:
     def apply_cuts(self, cuts):
         ''' Applies cuts to data vector and covariance matrix consistently
 
-            Input
-            -----
-            cuts: boolean array
+            Parameters
+            ----------
+            cuts: boolean np.array 
+                Numpy array with the mask to be applied to data vector and 
+                covariance matrix
         '''
+
         coords = self.coords
         self.coords = {k: coords[k][cuts] for k in coords}
         self.values = self.values[cuts]
@@ -111,19 +145,37 @@ class Data:
             self.cova = cova[cuts]
     
     def inverse_cova(self, nmocks=0):
-        ''' Computes inverse of the covariance matrix
+        r''' Computes inverse of the covariance matrix
             and applies Hartlap correction factor
-            $D = [1 - (n_{\rm data} +1)]/(n_{\rm mocks}-1)$
+            
+            Parameters
+            ----------
+            nmocks: int, optional 
+                Number of mocks used in the construction of covariance matrix
+        
         '''
+
         inv_cova = np.linalg.inv(self.cova)
         if nmocks > 0:
             #-- Hartlap correction
             correction = (1 - (self.values.size + 1.)/(nmocks-1))
             inv_cova *= correction
+
+        self.hartlap_correction = correction  
         self.inv_cova = inv_cova
     
     def plot(self, y_model=None, f=None, axs=None, power_k=1, power_r=2, label=None, figsize=(7, 8)):
+        ''' Plotting function
 
+            Plots the multipoles in both spaces (if available) with error bars 
+
+            Parameters
+            ----------
+            y_model : np.array, optional
+                Array containing the model evaluated at the data coordinates
+            f :  
+        '''
+        
         coords = self.coords
         space = np.unique(coords['space'])
         n_space = space.size
@@ -180,6 +232,12 @@ class Data:
         plt.colorbar()
 
 class Chi2: 
+    ''' Fitter class that minimises the $\chi^2$ 
+    
+        It connects a Data object and a Model object,
+        minimisation used iMinuit
+
+    '''
 
     def __init__(self, 
         data=None, 

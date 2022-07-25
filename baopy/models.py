@@ -1,3 +1,7 @@
+''' Module containing several clustering models
+
+'''
+
 import numpy as np
 import pylab as plt
 import hankl
@@ -7,7 +11,6 @@ from scipy.optimize import curve_fit
 from scipy.interpolate import UnivariateSpline
 from iminuit import Minuit
 from iminuit.cost import LeastSquares
-from iminuit.util import describe, make_func_code
 
 
 def legendre(ell, mu):
@@ -71,16 +74,21 @@ class Model:
         ''' General function that computes pk or xi multipoles 
             from a set of parameters
 
-            Input
-            -----
-            data_space (np.array) :  Array containing either 0 or 1 ( 0 = pk,  1 = xi)
-            data_ell (np.array) : Array containing the order of multipoles
-            data_x (np.array) : Array containing the x-axis value (k for pk, r for xi)
-            pars (dict): Dictionary containing the parameters of the model, see get_pk_2d()
+            Parameters
+            ----------
+            data_space :  np.array
+                Array containing either 0 or 1 ( 0 = pk,  1 = xi)
+            data_ell : np.array
+                Array containing the order of multipoles
+            data_x : np.array
+                Array containing the x-axis value (k for pk, r for xi)
+            pars : dict
+                Dictionary containing the parameters of the model, see get_pk_2d()
 
             Returns
             -------
-            y (np.array): Array containing the interpolated value of the model 
+            y : np.array
+                Array containing the interpolated value of the model 
 
         '''
         self.get_pk_2d(pars)
@@ -253,9 +261,15 @@ class Model:
 
 
 class BAO(Model):
-    ''' Implements the BAO model from Bautista et al. 2021 and Gil-Marin et al. 2020
-        Written by Julian Bautista
+    ''' Implements the BAO model from 
+        Bautista et al. 2021 
+        https://ui.adsabs.harvard.edu/abs/2021MNRAS.500..736B/abstract
+        and 
+        Gil-Marin et al. 2020
+        https://ui.adsabs.harvard.edu/abs/2020MNRAS.498.2492G/abstract
+    
     '''
+
     def __init__(self, pk_file=None,sideband_method='spl'): 
         super().__init__()
 
@@ -286,12 +300,24 @@ class BAO(Model):
 
     def broadband_spl(self,r1,r2,s,r_min,r_max):
             """
-            r1,r2 : floats : lower/upper bounds of the cut arround the peak
-            s : float : Positive smoothing factor used to choose the number of knots : sum((w[i] * (y[i]-spl(x[i])))**2, axis=0) <= s
-            r_min, r_max : scales limit for the fit
+            Implements the no-peak sideband using spline fit of the correlation function  
 
-            return an interpolated array (using cubic Splines) of the smoothed correlation function xi
+            Parameters
+            ----------
+            r1, r2 : float
+                Lower/upper bounds of the cut arround the peak
+            s : float 
+                Positive smoothing factor used to choose the number of knots : sum((w[i] * (y[i]-spl(x[i])))**2, axis=0) <= s
+            r_min, r_max : float 
+                Scales used for the fit
+
+            Returns
+            -------
+            xi_sm : array_like 
+                An interpolated array (using cubic Splines) of the smoothed correlation function xi
+
             """
+
             xi = self.xi
             r = self.r
             w = ((r < r1)|(r > r2))
@@ -427,26 +453,28 @@ class BAO(Model):
         plt.show()
 
     def get_pk_2d(self, pars, ell_max=4, no_peak=False, decouple_peak=True):
-        ''' Compute P(k, mu) for a set of parameters and
-            pk, pk_sideband
-        Input
-        -----
-        pars (dict): available parameters are:
-                     alpha_perp - alpha perpendicular or transverse
-                     alpha_para - alpha parallel to line-of-sight or radial
-                     alpha_iso - alpha isotropic
-                     epsilon - anisotropic parameter
-                     bias - linear large scale bias parameter
-                     beta - redshift space distortion parameter
-                     growth_rate - growth rate of structures
-                     sigma_perp - damping of BAO in the perpendicular direction
-                     sigma_para - damping of BAO in the parallel direction
-                     sigma_iso - damping of BAO isotropic
-                     sigma_fog - Finger's of God damping
-                     sigma_rec - Reconstruction damping
-                     bias2 - linear bias for second tracer
-                     beta2 - RSD parameter for second tracer
-                     beam - transverse damping (for 21cm data)
+        ''' Compute P(k, mu) for a set of parameters
+        
+        Parameters
+        ----------
+        pars : dict 
+            Dictionary containing the model parameters
+            Available parameters: 
+            alpha_perp - alpha perpendicular or transverse
+            alpha_para - alpha parallel to line-of-sight or radial
+            alpha_iso - alpha isotropic
+            epsilon - anisotropic parameter
+            bias - linear large scale bias parameter
+            beta - redshift space distortion parameter
+            growth_rate - growth rate of structures
+            sigma_perp - damping of BAO in the perpendicular direction
+            sigma_para - damping of BAO in the parallel direction
+            sigma_iso - damping of BAO isotropic
+            sigma_fog - Finger's of God damping
+            sigma_rec - Reconstruction damping
+            bias2 - linear bias for second tracer
+            beta2 - RSD parameter for second tracer
+            beam - transverse damping (for 21cm data)
         '''
 
         if 'alpha_iso' in pars:
@@ -579,7 +607,10 @@ class BAO(Model):
         
 class RSD_TNS(Model):
     ''' 
-    Implements the TNS model
+    Implements the TNS model by 
+    Taruya, Nishimishi & Saito 2010 
+    https://ui.adsabs.harvard.edu/abs/2010PhRvD..82f3522T/abstract 
+
     Written by Vincenzo Aronica and Julian Bautista
 
     '''
@@ -669,9 +700,13 @@ class RSD_TNS(Model):
 
     def get_pk_2d(self, pars, ell_max=4):
         ''' Compute P(k, mu)  eq. (2.198) of De Mattia Thesis 
-        Input
-        -----
-        pars (dict): available parameters are:
+        
+        Parameters
+        ----------
+        
+        pars : dict 
+            Dictionary containing the model parameters
+            Available parameters: 
             alpha_para = scaling of radial separations
             alpha_perp = scaling of transverse separations
             b1 = linear bias
