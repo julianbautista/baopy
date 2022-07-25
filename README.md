@@ -17,3 +17,4 @@ Package to fit for BAO in correlation function, power spectra, or both !
 
 This should run the fit, print some outputs (best-fit parameters, errors) and plot the best-fit model, saving it to a PDF. 
 
+fne

@@ -4,6 +4,11 @@ import hankl
 import scipy.interpolate 
 import scipy.linalg
 from scipy.optimize import curve_fit
+from scipy.interpolate import UnivariateSpline
+from iminuit import Minuit
+from iminuit.cost import LeastSquares
+from iminuit.util import describe, make_func_code
+
 
 def legendre(ell, mu):
 
@@ -251,7 +256,7 @@ class BAO(Model):
     ''' Implements the BAO model from Bautista et al. 2021 and Gil-Marin et al. 2020
         Written by Julian Bautista
     '''
-    def __init__(self, pk_file=None): 
+    def __init__(self, pk_file=None,sideband_method='spl'): 
         super().__init__()
 
         k, pk = np.loadtxt(pk_file, unpack=True)
@@ -260,7 +265,12 @@ class BAO(Model):
         xi = xi.real
 
         #-- Get xi without BAO peak 
-        xi_nopeak = self.get_sideband_xi(r, xi)
+        if sideband_method == 'spl':
+            xi_nopeak = self.get_sideband_xi_spl(r, xi,fix_min_max=False)
+        elif sideband_method == 'pol':
+            xi_nopeak = self.get_sideband_xi_pol(r, xi)
+        else:
+            print("ERROR : 'sideband_method' argument must be 'spl' or 'pol'.")
 
         #-- Get pk without BAO peak with an inverse Fourier transform
         _, pk_nopeak = hankl.xi2P(r, xi_nopeak, l=0, lowring=True) 
@@ -273,15 +283,93 @@ class BAO(Model):
         self.pk = pk
         self.pk_nopeak = pk_nopeak
 
-    def get_sideband_xi(self, r, xi, 
+
+    def broadband_spl(self,r1,r2,s,r_min,r_max):
+            """
+            r1,r2 : floats : lower/upper bounds of the cut arround the peak
+            s : float : Positive smoothing factor used to choose the number of knots : sum((w[i] * (y[i]-spl(x[i])))**2, axis=0) <= s
+            r_min, r_max : scales limit for the fit
+
+            return an interpolated array (using cubic Splines) of the smoothed correlation function xi
+            """
+            xi = self.xi
+            r = self.r
+            w = ((r < r1)|(r > r2))
+            #-- Note : for Splines interpolation the [r_min,r_max] boundaries are not needed,
+            #   but without it the computation time is significantly longer and the results are not really better.
+            w = (((r < r1)&(r>r_min))|((r > r2)&(r<r_max)))
+            x_interp = r[w]
+            y_interp = xi[w]*x_interp**2
+            spl = UnivariateSpline(x_interp, y_interp,w=None,k=3,s=s) #Rq when s get to high, oscillations appeares in pk_sm for small k
+            
+            xi_sm_r2 = xi*r**2
+            w_peak = (r>r_min)&(r<r_max)
+
+            xi_sm_r2[w_peak] = spl(r[w_peak])
+            xi_sm = xi_sm_r2*r**-2
+
+            return xi_sm
+
+
+
+    def get_sideband_xi_spl(self,r,xi,fix_min_max=False):
+        """
+            Gets sideband correlation function, i.e., the correlation function
+            without the BAO peak.
+
+            Algorithm inspired from Bernal et al. 2020
+            https://arxiv.org/abs/2004.07263 
+        
+
+        """
+
+        def get_pk_sm_spl(k,r1,r2,s,r_min,r_max):
+            """
+            k : array : wavevector bins
+            r1,r2 : floats : lower/upper bounds of the cut
+            s : float : Positive smoothing factor used to choose the number of knots : sum((w[i] * (y[i]-spl(x[i])))**2, axis=0) <= s
+
+            return the smoothed pk evaluated in any k. This function is meant to be fitted to get the best parameters r1,r2 (s?)
+            """
+
+            xi_sm = self.broadband_spl(r1,r2,s,r_min,r_max)
+            _, pk_sm = hankl.xi2P(r, xi_sm, l=0,lowring=True)
+            pk_sm = pk_sm.real
+
+            return np.interp(k,self.k,pk_sm)
+
+
+        #define the condition at large scales pk_sm = pk
+        k_limit = 10**-3 #-- Note : taking k_limit between [5e-5,1e-2] does not affect the result very much
+        w = (self.k<k_limit)
+        #data to be fitted
+        data_x = self.k[w]
+        data_y = self.pk[w]
+        data_yerr = 0.1 #default err
+
+        least_squares = LeastSquares(data_x, data_y, data_yerr, get_pk_sm_spl)
+        m = Minuit(least_squares, r1=70,r2=250,s=1e-1,r_min=50,r_max=500)
+
+        m.limits = [(60, 70), (200, 300),(0.,1),(10,50),(350,1e3)] 
+
+        #allow to fix the parameters r_min and r_max if they are not relevant           
+        if fix_min_max ==True:
+            m.fixed["r_min"] = True
+            m.fixed["r_max"] = True
+
+        m.scan(ncall=50).migrad()
+
+        xi_sm = self.broadband_spl(m.values["r1"],m.values["r2"],m.values["s"],m.values["r_min"],m.values["r_max"])
+        
+        return xi_sm
+
+
+    def get_sideband_xi_pol(self, r, xi, 
         r_range=[[50., 80.], [160., 190.]]):
         ''' Gets sideband correlation function, i.e., the correlation function
             without the BAO peak.
 
             r_range is defines the boundaries of data used to fit the sideband
-
-            Need to check a better algorithm from Bernal et al. 2020
-            https://arxiv.org/abs/2004.07263 
         '''
 
         peak_range = [r_range[0][1], r_range[1][0]]
