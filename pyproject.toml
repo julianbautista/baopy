@@ -1,0 +1,8 @@
+[build-system]
+requires = ["flit_core >=3.2,<4"]
+build-backend = "flit_core.buildapi"
+
+[project]
+name = "baopy"
+authors = [{name = "Julian Bautista, Tyann Dumerchat, Vincenzo Aronica", email = "bautista@cppm.in2p3.fr"}]
+dynamic = ["version", "description"]
