@@ -25,11 +25,11 @@ parameters = {'alpha_para':{'value':1.,     'error':0.1,  'limit_low': 0.5, 'lim
               'bias'      :{'value':2.3,    'error': 0.1, 'limit_low': 1,   'limit_upp': 4.,  'fixed': False},
               'beta':      {'value':0.35,   'fixed':True}, 
               'sigma_rec' :{'value':15.,    'fixed':True}, 
-              'sigma_para':{'value':7. ,  'fixed':True}, #-- Value used in Gil-Marín et al. 2020
-              'sigma_perp':{'value':2.,   'fixed':True}, #-- Value used in Gil-Marín et al. 2020
+              'sigma_para':{'value':7. ,    'fixed':True}, #-- Value used in Gil-Marín et al. 2020
+              'sigma_perp':{'value':2.,     'fixed':True}, #-- Value used in Gil-Marín et al. 2020
               #'sigma_para':{'value':7.31 ,  'fixed':True}, #-- Value used Bautista et al. 2020
               #'sigma_perp':{'value':5.53,   'fixed':True}, #-- Value used in Bautista et al. 2020
-              'sigma_fog'   :{'value':0.,     'fixed':True} 
+              'sigma_fog'   :{'value':0.,   'fixed':True} 
               }
 
 #-- Some extra options, e.g., broadband

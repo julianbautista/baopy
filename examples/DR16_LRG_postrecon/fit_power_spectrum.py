@@ -23,7 +23,7 @@ mod.read_window_function('Window_NGCSGC_public.txt')
 parameters = {'alpha_para':{'value':1.,     'error':0.1,  'limit_low': 0.5, 'limit_upp': 1.5, 'fixed': False}, 
               'alpha_perp':{'value':1.,     'error':0.1,  'limit_low': 0.5, 'limit_upp': 1.5, 'fixed': False},
               'bias'      :{'value':2.3,    'error': 0.1, 'limit_low': 1,   'limit_upp': 4.,  'fixed': False},
-              'beta'      :{'value':0.35,   'fixed':False}, 
+              'beta'      :{'value':0.35,   'fixed':True}, 
               'sigma_rec' :{'value':15.,    'fixed':True}, 
               'sigma_para':{'value':7.0,   'fixed':True}, #-- Value used in Gil-Marín et al. 2020
               'sigma_perp':{'value':2.0,    'fixed':True}, #-- Value used in Gil-Marín et al. 2020

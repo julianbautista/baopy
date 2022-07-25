@@ -107,7 +107,7 @@ class Model:
 
     def plot_multipoles(self, f=None, axs=None, ell_max=None, 
         k_range=(0., 0.5), r_range=(0, 200), 
-        scale_k=1, scale_r=2, convolved=True, ls=None):
+        power_k=1, power_r=2, convolved=True, ls=None):
 
         ell = self.ell
         n_ell = ell.size
@@ -133,22 +133,22 @@ class Model:
 
         for i in range(n_ell):
             x = k[wk] 
-            y = pk_mult[i, wk]*x**scale_k
+            y = pk_mult[i, wk]*x**power_k
             axs[i, 0].plot(x, y, color=f'C{i}', ls=ls, label=r'$\ell=$'+f'{ell[i]}')
             axs[i, 0].set_xlim(k_range)
             axs[i, 0].legend()
         
         for i in range(n_ell):
             x = r[wr]
-            y = xi_mult[i, wr] * x**scale_r
+            y = xi_mult[i, wr] * x**power_r
             axs[i, 1].plot(x, y, color=f'C{i}', ls=ls, label=r'$\ell=$'+f'{ell[i]}')
             axs[i, 1].set_xlim(r_range)
             axs[i, 1].legend()
 
         axs[-1, 0].set_xlabel(r'$k$ [$h$ Mpc$^{-1}$]')
         axs[-1, 1].set_xlabel(r'$r$ [$h^{-1}$ Mpc]')
-        axs[0, 0].set_title(r'$k^2 P_\ell(k)$')
-        axs[0, 1].set_title(r'$r^2 \xi_\ell(k)$')
+        axs[0, 0].set_title(fr'$k^{{power_k}} P_\ell(k)$')
+        axs[0, 1].set_title(fr'$r^{{power_r}} \xi_\ell(k)$')
 
         return f, axs
 
@@ -671,8 +671,8 @@ class RSD_TNS(Model):
             2*b1*b3nl * pk_bias_2d[7] + 
             b2**2 * pk_bias_2d[2] + 
             2*b2*bs2 * pk_bias_2d[3] + 
-            bs2**2 * pk_bias_2d[4] + 
-            shot_noise)
+            bs2**2 * pk_bias_2d[4] 
+            )
 
         pk_g_dt = (b1 * pk_regpt_2d[1] + 
                  b2 * pk_bias_2d[5] + 
@@ -691,6 +691,9 @@ class RSD_TNS(Model):
                    pk_g_tt * (amu**2 * beta * b1)**2 + 
                    b1**3*A + 
                    b1**4*B )
+        
+        #-- Adding shot noise now so it is not convolved by FoF
+        pk_rsd += shot_noise
 
         #-- Multipoles of pk
         pk_mult = multipoles(pk_rsd, ell_max=ell_max)
@@ -700,12 +703,12 @@ class RSD_TNS(Model):
         xi_mult = np.zeros((ell.size, k.size))
         for i in range(ell.size):
             r, xi = hankl.P2xi(k, pk_mult[i], l=ell[i], lowring=True)
-            xi_mult[i] = xi.real
-
+            xi_mult[i] = xi.real 
+        
         #-- AP Jacobian for pk only 
         pk_mult *= 1/alpha_para/alpha_perp**2
         pk_rsd *= 1/alpha_para/alpha_perp**2
-        
+
         self.ell = ell
         self.mu = mu
         self.amu = amu 

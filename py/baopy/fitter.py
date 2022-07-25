@@ -529,7 +529,7 @@ class Sampler:
         seed=0):
         ''' Now working
         
-        '''
+        ''' 
         if sampler_name == 'zeus':
             import zeus
             sampling_function = zeus.sampler
