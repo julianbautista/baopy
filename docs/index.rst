@@ -54,9 +54,3 @@ or::
 
   python fit_power_spectrum.py 
 
-
-.. toctree::
-  :maxdepth: 1
-  :caption: API
-
-  api/baopy

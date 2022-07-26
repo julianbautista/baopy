@@ -8,15 +8,18 @@ import hankl
 
 import scipy.interpolate 
 import scipy.linalg
-from scipy.optimize import curve_fit
-from scipy.interpolate import UnivariateSpline
+import scipy.optimize
+import scipy.interpolate
 
 from iminuit import Minuit
 from iminuit.cost import LeastSquares
 
 
 def legendre(ell, mu):
-
+    ''' Legendre polynomials 
+        
+    '''
+    
     if ell == 0:
         return mu*0+1
     elif ell == 2:
@@ -32,15 +35,21 @@ def legendre(ell, mu):
 
 def multipoles(x, ell_max=8):
     ''' Get multipoles of any function of ell
-        It assumes symmetry around mu=0 
-        Input
-        -----
-        x: np.array with shape (nmu, nx) from which the multipoles will be computed    
-        mu: np.array with shape (nmu) where nmu is the number of mu bins
+        It assumes symmetry around mu=0. 
+        Uses ``numpy.trapz()`` to integrate over mu.  
         
+        Parameters
+        ----------
+        x : np.array with shape (nmu, nx) 
+            Function from which the multipoles will be computed    
+        ell_max : int 
+            Maximum multipole order to compute. Currently only supports even multipoles 
+
         Returns
-        ----
-        f_mult: np.array with shape (nell, nx) 
+        -------
+        x_mult : np.array with shape (nell, nx)
+            Multipoles, where ``nell`` is the number of even multipoles between ``0`` and ``ell_max``. 
+
     '''
     
     n_mu = x.shape[0]
@@ -58,7 +67,10 @@ def multipoles(x, ell_max=8):
 
 
 class Model:
+    ''' General class that holds both BAO or RSD models 
 
+    '''
+    
     def __init__(self):
         self.r = None
         self.xi = None
@@ -120,10 +132,39 @@ class Model:
 
         return model
 
-    def plot_multipoles(self, f=None, axs=None, ell_max=None, 
+    def plot_multipoles(self, 
+        f=None, axs=None, ell_max=None, 
         k_range=(0., 0.5), r_range=(0, 200), 
-        power_k=1, power_r=2, convolved=True, ls=None):
+        power_k=1, power_r=2, convolved=True, ls=None, figsize=None):
+        ''' Plots the multipoles computed for a set of parameters 
+        
+        Parameters
+        ----------
+        f : plt.figure.Figure, optional
+            If not provided, creates a new figure 
+        axs : plt.axes.Axes, optional
+            If not provided, creates a new set of axes 
+        ell_max : int, optional
+            Maximum order of multipoles to be plotted 
+        k_range : tuple
+            Range of wavenumbers in h/Mpc to be plotted 
+        r_range : tuplt
+            Range of separations in Mpc/h to be plotted 
+        power_k : int
+            Scales the plotted power spectra by ``k**power_k``
+        power_r : int 
+            Scales the plotted correlation function by ``r**power_r``
+        convolved : bool
+            If true, plots the convolved power spectrum (the correlation function remains the same)
+        
+        Returns
+        -------
+        f : plt.figure.Figure 
+            Figure object 
+        axs : 
+            Set of axes 
 
+        '''
         ell = self.ell
         n_ell = ell.size
         k = self.k
@@ -144,7 +185,7 @@ class Model:
             n_ell = ell_max//2 + 1
 
         if f is None:
-            f, axs = plt.subplots(ncols=2, nrows=n_ell, figsize=(8, 7), sharex='col')
+            f, axs = plt.subplots(ncols=2, nrows=n_ell, figsize=figsize, sharex='col')
 
         for i in range(n_ell):
             x = k[wk] 
@@ -162,17 +203,17 @@ class Model:
 
         axs[-1, 0].set_xlabel(r'$k$ [$h$ Mpc$^{-1}$]')
         axs[-1, 1].set_xlabel(r'$r$ [$h^{-1}$ Mpc]')
-        axs[0, 0].set_title(fr'$k^{{power_k}} P_\ell(k)$')
-        axs[0, 1].set_title(fr'$r^{{power_r}} \xi_\ell(k)$')
+        axs[0, 0].set_title(r'$k^{{{power_k}}} P_\ell(k)$'.format(power_k=power_k))
+        axs[0, 1].set_title(r'$r^{{{power_r}}} \xi_\ell(k)$'.format(power_r=power_r))
 
         return f, axs
 
     def test_with_fake_data(self):
 
         #-- Some example parameters
-        pars = {'alpha_para': 1., 
-                'alpha_perp': 1., 
-                'bias': 1., 
+        pars = {'alpha_para': 1.1, 
+                'alpha_perp': 0.95, 
+                'bias': 2., 
                 'beta': 0.3, 
                 'sigma_para': 10., 
                 'sigma_perp': 6., 
@@ -200,7 +241,7 @@ class Model:
         data_y = self.get_multipoles(data['space'], data['ell'], data['x'], pars)
         
         #-- Make the plots of model
-        f, axs = self.plot_multipoles()       
+        f, axs = self.plot_multipoles(power_k=2, power_r=2)       
         
         #-- Add 'data' points 
         for s in np.unique(data['space']):
@@ -211,11 +252,19 @@ class Model:
                     y = data_y[w] 
                     i_row = int(l)//2
                     i_col = int(s)
-                    axs[i_row, i_col].plot(x, y*x**2, 'o')
+                    axs[i_row, i_col].plot(x, y*x**2, 'o', alpha=0.3)
+        plt.show()
 
     def read_window_function(self, window_file):
-        ''' Reads windown function multipoles from file
+        ''' Reads windown function multipoles from text file
+
             This file format was created by R. Neveux
+
+            Parameters
+            ----------
+            window_file : str
+                Name of text file containing the window function multipoles
+
         '''
         data = np.loadtxt(window_file, unpack=1)
         r_window = data[0]
@@ -231,10 +280,9 @@ class Model:
         self.window_mult = window_mult
 
     def get_multipoles_window(self):
-        ''' Get xi and pk multipoles convolved by a window function
+        ''' Get power spectrum multipoles convolved by a window function
+            following Eq. 19, 20 and 21 of Beutler et al. 2017
 
-            Compute convolved multipoles of correlation function 
-            given Eq. 19, 20 and 21 of Beutler et al. 2017
         '''
 
         xi = self.xi_mult
@@ -272,37 +320,58 @@ class BAO(Model):
     
     '''
 
-    def __init__(self, pk_file=None,sideband_method='spl'): 
+    def __init__(self, pk_file=None, nopeak_method='spline'): 
         super().__init__()
 
+        print(f'Reading linear power spectrum from: {pk_file}')
         k, pk = np.loadtxt(pk_file, unpack=True)
         #-- Fourier transform the power spectrum to correlation function
         r, xi = hankl.P2xi(k, pk, l=0, lowring=True)
         xi = xi.real
 
+        self.r = r
+        self.xi = xi
+        self.k = k
+        self.pk = pk
+
         #-- Get xi without BAO peak 
-        if sideband_method == 'spl':
-            xi_nopeak = self.get_sideband_xi_spl(r, xi,fix_min_max=False)
-        elif sideband_method == 'pol':
-            xi_nopeak = self.get_sideband_xi_pol(r, xi)
+        if nopeak_method == 'spline':
+            xi_nopeak = self.get_xi_nopeak_spline()
+        elif nopeak_method == 'poly':
+            xi_nopeak = self.get_xi_nopeak_poly()
         else:
-            print("ERROR : 'sideband_method' argument must be 'spl' or 'pol'.")
+            print("ERROR : 'sideband_method' argument must be 'spline' or 'poly'.")
 
         #-- Get pk without BAO peak with an inverse Fourier transform
         _, pk_nopeak = hankl.xi2P(r, xi_nopeak, l=0, lowring=True) 
         pk_nopeak = pk_nopeak.real
 
-        self.r = r
-        self.xi = xi
         self.xi_nopeak = xi_nopeak
-        self.k = k
-        self.pk = pk
         self.pk_nopeak = pk_nopeak
 
+    def get_xi_nopeak_spline(self, fix_min_max=False):
+        """
+            Gets the correlation function without the BAO peak
+            using splines. 
 
-    def broadband_spl(self,r1,r2,s,r_min,r_max):
-            """
-            Implements the no-peak sideband using spline fit of the correlation function  
+            Algorithm inspired from Bernal et al. 2020
+            https://arxiv.org/abs/2004.07263 
+        
+            Parameters
+            ----------
+            r : array 
+                Separations
+            fix_min_max : bool
+                If true, it will not attempt to fit the values of rmin and rmax
+            
+            Returns
+            -------
+            xi_sm : array 
+                Isotropic correlation function without BAO peak 
+        """
+        
+        def broadband_spl(r1, r2, s, r_min, r_max):
+            """ Implements the fit for the no-peak correlation function using splines
 
             Parameters
             ----------
@@ -320,15 +389,14 @@ class BAO(Model):
 
             """
 
-            xi = self.xi
-            r = self.r
             w = ((r < r1)|(r > r2))
             #-- Note : for Splines interpolation the [r_min,r_max] boundaries are not needed,
             #   but without it the computation time is significantly longer and the results are not really better.
-            w = (((r < r1)&(r>r_min))|((r > r2)&(r<r_max)))
+            w = (((r < r1)&(r>r_min)) | ((r > r2)&(r<r_max)))
             x_interp = r[w]
             y_interp = xi[w]*x_interp**2
-            spl = UnivariateSpline(x_interp, y_interp,w=None,k=3,s=s) #Rq when s get to high, oscillations appeares in pk_sm for small k
+            #- Rq when s get to high, oscillations appeares in pk_sm for small k 
+            spl = scipy.interpolate.UnivariateSpline(x_interp, y_interp, w=None, k=3, s=s) 
             
             xi_sm_r2 = xi*r**2
             w_peak = (r>r_min)&(r<r_max)
@@ -338,20 +406,7 @@ class BAO(Model):
 
             return xi_sm
 
-
-
-    def get_sideband_xi_spl(self,r,xi,fix_min_max=False):
-        """
-            Gets sideband correlation function, i.e., the correlation function
-            without the BAO peak.
-
-            Algorithm inspired from Bernal et al. 2020
-            https://arxiv.org/abs/2004.07263 
-        
-
-        """
-
-        def get_pk_sm_spl(k,r1,r2,s,r_min,r_max):
+        def get_pk_sm_spl(k, r1, r2, s, r_min, r_max):
             """
             k : array : wavevector bins
             r1,r2 : floats : lower/upper bounds of the cut
@@ -360,45 +415,62 @@ class BAO(Model):
             return the smoothed pk evaluated in any k. This function is meant to be fitted to get the best parameters r1,r2 (s?)
             """
 
-            xi_sm = self.broadband_spl(r1,r2,s,r_min,r_max)
-            _, pk_sm = hankl.xi2P(r, xi_sm, l=0,lowring=True)
+            xi_sm = broadband_spl(r1, r2, s, r_min, r_max)
+            _, pk_sm = hankl.xi2P(r, xi_sm, l=0, lowring=True)
             pk_sm = pk_sm.real
 
-            return np.interp(k,self.k,pk_sm)
+            return np.interp(k, self.k, pk_sm)
 
+        r = self.r 
+        xi = self.xi 
 
-        #define the condition at large scales pk_sm = pk
+        #- Define the condition at large scales pk_sm = pk
         k_limit = 10**-3 #-- Note : taking k_limit between [5e-5,1e-2] does not affect the result very much
-        w = (self.k<k_limit)
-        #data to be fitted
+
+        w = (self.k < k_limit)
         data_x = self.k[w]
         data_y = self.pk[w]
         data_yerr = 0.1 #default err
 
         least_squares = LeastSquares(data_x, data_y, data_yerr, get_pk_sm_spl)
-        m = Minuit(least_squares, r1=70,r2=250,s=1e-1,r_min=50,r_max=500)
+        m = Minuit(least_squares, r1=70, r2=250, s=1e-1, r_min=50, r_max=500)
 
-        m.limits = [(60, 70), (200, 300),(0.,1),(10,50),(350,1e3)] 
+        m.limits = [(60, 70), (200, 300), (0., 1), (10, 50), (350, 1e3)] 
 
         #allow to fix the parameters r_min and r_max if they are not relevant           
-        if fix_min_max ==True:
+        if fix_min_max == True:
             m.fixed["r_min"] = True
             m.fixed["r_max"] = True
 
         m.scan(ncall=50).migrad()
 
-        xi_sm = self.broadband_spl(m.values["r1"],m.values["r2"],m.values["s"],m.values["r_min"],m.values["r_max"])
+        xi_sm = broadband_spl(  m.values["r1"],
+                                m.values["r2"],
+                                m.values["s"],
+                                m.values["r_min"],
+                                m.values["r_max"])
         
         return xi_sm
 
+    def get_xi_nopeak_poly(self,  r_range=[[50., 80.], [160., 190.]]):
+        ''' Gets the correlation function
+            without the BAO peak using polynomial fit. 
 
-    def get_sideband_xi_pol(self, r, xi, 
-        r_range=[[50., 80.], [160., 190.]]):
-        ''' Gets sideband correlation function, i.e., the correlation function
-            without the BAO peak.
+            Based on method by Kirkby et al 2013
+            https://ui.adsabs.harvard.edu/abs/2013JCAP...03..024K/abstract 
 
-            r_range is defines the boundaries of data used to fit the sideband
+            Parameters
+            ----------
+            r_range : tuple
+                Defines the boundaries of data used to fit the sideband
+
+            Returns
+            -------
+            xi_sideband : array 
+                Isotropic correlation function without BAO peak 
         '''
+        r = self.r*1 
+        xi = self.xi*1
 
         peak_range = [r_range[0][1], r_range[1][0]]
         w = (((r > r_range[0][0]) & 
@@ -413,8 +485,7 @@ class BAO(Model):
             return pars[0]*xx + pars[1] + pars[2]/xx + pars[3]/xx**2 + \
                    pars[4]*xx**2 + pars[5]*xx**3 + pars[6]*xx**4  
 
-        popt, _ = curve_fit(broadband, x_fit, y_fit,
-                                p0=[0, 0, 0, 0, 0, 0, 0])
+        popt, _ = scipy.optimize.curve_fit(broadband, x_fit, y_fit, p0=[0, 0, 0, 0, 0, 0, 0])
        
         xi_sideband = xi*1.
         w_peak = (r>peak_range[0])&(r<peak_range[1])
@@ -436,21 +507,34 @@ class BAO(Model):
         xi = self.xi
         xis = self.xi_nopeak
 
-        plt.figure(figsize=(6,4))
-        plt.plot(k, pk*k, 'k', lw=2)
-        plt.plot(k, pks*k, 'r--', lw=2)
-        plt.xscale('log')
-        plt.xlabel(r'$k \ [h \ \rm{Mpc}^{-1}]$')
-        plt.ylabel(r'$kP_{\rm lin}(k) \ [h^{-2}\mathrm{Mpc}^2]$')
-        plt.xlim(1e-3, 10)
-        plt.tight_layout()
+        f, axs = plt.subplots(figsize=(12,7), nrows=2, ncols=2, sharex='col')
 
-        plt.figure(figsize=(6,4))
-        plt.plot(r, xi*r**2, 'k', lw=2)
-        plt.plot(r, xis*r**2, 'r--', lw=2)
-        plt.xlabel(r'$r \ [h^{-1} \mathrm{Mpc}]$')
-        plt.ylabel(r'$r^2 \xi_{\rm lin} \ [h^{-2} \mathrm{Mpc}^{2}]$')
-        plt.xlim(0, 200)
+        ax = axs[0][0]
+        ax.plot(k, pk*k, 'k', lw=2)
+        ax.plot(k, pks*k, 'r--', lw=2)
+        ax.set_xlabel(r'$k \ [h \ \mathrm{Mpc}^{-1}]$')
+        ax.set_ylabel(r'$kP_\mathrm{lin}(k) \ [h^{-2}\mathrm{Mpc}^2]$')
+        #ax.xlim(k.min(), k.max())
+        
+        ax = axs[1][0]
+        ax.plot(k, pk/pks -1, 'C0', lw=2)
+        ax.set_xscale('log')
+        ax.set_xlabel(r'$k \ [h \ \rm{Mpc}^{-1}]$')
+        ax.set_ylabel(r'$O_{\rm lin}(k) = P_\mathrm{lin}(k)/P_\mathrm{no peak}(k)-1$')
+        
+        ax = axs[0][1] 
+        ax.plot(r, xi*r**2, 'k', lw=2)
+        ax.plot(r, xis*r**2, 'r--', lw=2)
+        ax.set_xlabel(r'$r \ [h^{-1} \mathrm{Mpc}]$')
+        ax.set_ylabel(r'$r^2 \xi_{\rm lin} \ [h^{-2} \mathrm{Mpc}^{2}]$')
+        ax.set_xlim(0, 500)
+
+        ax = axs[1][1] 
+        ax.plot(r, (xi-xis)*r**2, 'C0', lw=2)
+        ax.set_xlabel(r'$r \ [h^{-1} \mathrm{Mpc}]$')
+        ax.set_ylabel(r'$r^2 (\xi_\mathrm{lin}-\xi_\mathrm{no peak}) \ [h^{-2} \mathrm{Mpc}^{2}]$')
+        ax.set_xlim(0, 500)
+
         plt.tight_layout()
         plt.show()
 
@@ -810,6 +894,7 @@ class RSD_TNS(Model):
         pk_rsd = 1 
         #-- Fingers of God
         pk_rsd *= fog**2
+        
         #-- Final model 
         pk_rsd *= (pk_g_dd + 
                    pk_g_dt * 2 * amu**2 * beta * b1  + 
@@ -817,9 +902,6 @@ class RSD_TNS(Model):
                    b1**3*A + 
                    b1**4*B )
         
-        #-- Adding shot noise now so it is not convolved by FoF
-        pk_rsd += shot_noise
-
         #-- Multipoles of pk
         pk_mult = multipoles(pk_rsd, ell_max=ell_max)
 
@@ -830,9 +912,13 @@ class RSD_TNS(Model):
             r, xi = hankl.P2xi(k, pk_mult[i], l=ell[i], lowring=True)
             xi_mult[i] = xi.real 
         
+        #-- Adding shot noise now to monopole only so it is not included in xi
+        pk_mult[0] += shot_noise
+        #pk_rsd += shot_noise 
+        
         #-- AP Jacobian for pk only 
         pk_mult *= 1/alpha_para/alpha_perp**2
-        pk_rsd *= 1/alpha_para/alpha_perp**2
+        #pk_rsd *= 1/alpha_para/alpha_perp**2
 
         self.ell = ell
         self.mu = mu
@@ -843,7 +929,7 @@ class RSD_TNS(Model):
         self.ak_2d = ak_2d
         self.mu_2d = mu_2d 
         self.k_2d = k_2d
-        self.pk_2d = pk_rsd 
+        #self.pk_2d = pk_rsd 
 
         #-- Multipole quantities
         self.r_mult = r

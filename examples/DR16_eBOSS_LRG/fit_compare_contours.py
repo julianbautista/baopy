@@ -21,8 +21,8 @@ f, ax = plt.subplots(1, 1)
 
 for i in range(len(chis)):
     #-- Read best-fit values
-    alpha_perp = chis[i].output['best_pars']['alpha_perp']
-    alpha_para = chis[i].output['best_pars']['alpha_para']
+    alpha_perp = chis[i].output['best_pars_value']['alpha_perp']
+    alpha_para = chis[i].output['best_pars_value']['alpha_para']
     #-- Read contours
     contours = chis[i].output['contours']['alpha_perp', 'alpha_para']
     

@@ -2,8 +2,8 @@
 
 Modules:
 
+    data
     models 
     fitter
-    converter
 
 '''

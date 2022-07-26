@@ -54,7 +54,7 @@ class Data:
                 Name of .ecsv file containing data vector 
 
         '''
-
+        print(f'Reading data vector from: {data_file}')
         data = Table.read(data_file)
         coords = {  'space': data['space'].data,
                     'ell':   data['ell'].data,
@@ -74,14 +74,14 @@ class Data:
             cova_file: str 
                 Name of .ecsv file containing covariance matrix and its coordinates
         '''
-
+        print(f'Reading covariance from: {cova_file}')
         cova = Table.read(cova_file)
 
         cova_coords = { 'space_1': cova['space_1'].data,
-                        'space_2': cova['space_2'].data,
                         'ell_1':   cova['ell_1'].data,
-                        'ell_2':   cova['ell_2'].data,
                         'scale_1': cova['scale_1'].data,
+                        'space_2': cova['space_2'].data,
+                        'ell_2':   cova['ell_2'].data,
                         'scale_2': cova['scale_2'].data
                      }
         cova_values = cova['covariance'].data
@@ -206,14 +206,14 @@ class Data:
         elif power_k == 1:
             title_k = fr'$k P_\ell(k)$'
         else:
-            title_k = fr'$k^{power_k} P_\ell(k)$'
+            title_k = r'$k^{{{power_k}}} P_\ell(k)$'.format(power_k=power_k)
 
         if power_r == 0:
             title_r =  r'$\xi_\ell(k)$'
         elif power_r == 1:
             title_r = fr'$r \xi_\ell(k)$'
         else:
-            title_r =  fr'$r^{power_r} \xi_\ell(k)$'
+            title_r =  fr'$r^{{{power_r}}} \xi_\ell(k)$'
         titles = [title_k, title_r]
 
 

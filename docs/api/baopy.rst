@@ -1,30 +1,29 @@
-baopy package
-=============
+baopy
+=====
 
-Submodules
-----------
 
-baopy.converter module
-----------------------
+Data module
+-----------
 
-.. automodule:: baopy.converter
+.. automodule:: baopy.data
    :members:
    :undoc-members:
    :show-inheritance:
 
-baopy.fitter module
--------------------
+Models module
+-------------
+
+.. automodule:: baopy.models
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Fitter module
+-------------
 
 .. automodule:: baopy.fitter
    :members:
    :undoc-members:
    :show-inheritance:
 
-baopy.models module
--------------------
-
-.. automodule:: baopy.models
-   :members:
-   :undoc-members:
-   :show-inheritance:
 

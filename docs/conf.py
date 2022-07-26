@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.abspath(os.path.join('..', 'baopy')))
 
 project = 'baopy'
 copyright = '2022, Julian Bautista'
-author = 'Julian Bautista'
+author = 'Julian Bautista, Tyann Dumerchat, Vincenzo Aronica'
 release = '0.1'
 version = '0.1.0'
 

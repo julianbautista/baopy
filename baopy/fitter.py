@@ -317,7 +317,7 @@ class Chi2:
         output['best_pars_details'] = details
         self.output = output
 
-    def plot(self, f=None, axs=None, power_k=1, power_r=2, label=None, figsize=(10, 4)):
+    def plot(self, f=None, axs=None, power_k=1, power_r=2, figsize=(6, 6)):
         ''' Plots the data and its best-fit model 
         '''
         if self.best_model is None:
@@ -330,7 +330,7 @@ class Chi2:
         f, axs = self.data.plot(f=f, axs=axs, 
                                 power_k=power_k, power_r=power_r, 
                                 y_model=self.best_model,
-                                figsize=figsize, label=label)
+                                figsize=figsize)
         return f, axs
 
     def save(self, filename):
