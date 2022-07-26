@@ -6,11 +6,7 @@
 Welcome to baopy's documentation!
 =================================
 
-.. toctree::
-   :maxdepth: 2
-   :caption: Contents:
-
-   api/baopy
+ 
 
 Installation
 ============
@@ -27,4 +23,25 @@ Or in development mode (any change to Python code will take place immediately)::
 
   python setup.py develop --user
 
+Testing
+=======
 
+There are some examples of BAO fits in 
+
+   cd examples/DR16_eBOSS_LRG 
+
+Then run one of the fits:
+
+   python fit_correlation_function.py 
+
+or 
+
+   python fit_power_spectrum.py 
+
+
+API
+=== 
+
+Here are the documented modules 
+
+  api/baopy
