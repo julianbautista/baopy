@@ -938,6 +938,9 @@ class RSD_TNS(Model):
         self.xi_mult = xi_mult
 
         if not self.window_mult is None:
+            #-- The convolved multipoles are computed from xi_mult 
+            #-- so we have to add shot_noise and the Jacobian terms
             self.get_multipoles_window()
+            self.pk_mult_convol[0] += shot_noise
             self.pk_mult_convol *= 1/alpha_para/alpha_perp**2
 
