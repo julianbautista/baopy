@@ -5,232 +5,6 @@ import pickle
 
 import iminuit
 
-from astropy.table import Table 
-
-plt.ion()
-
-class Data: 
-    ''' Class dealing with data vector and covariance matrices 
-        
-        It contains functions to mask bins or plotting, and it 
-        is mostly used in the Chi class
-    '''
-
-    def __init__(self, data_file=None, cova_file=None):
-        ''' Initialises the object by reading data vector and covariances
-
-        Parameters
-        ----------
-        
-        data_file : str, optional 
-            Name of (.ecsv) file containing data vector and its coordinates
-        cova_file : str, optional 
-            Name of (.ecsv) file containing covariance matrix 
-
-        '''
-
-        self.coords = None
-        self.values = None 
-        self.cova = None 
-        if data_file is not None:
-            self.read_data(data_file)
-        if cova_file is not None:
-            self.read_cova(cova_file)
-        if self.coords is not None and self.cova_coords is not None:
-            self.match_cova()
-
-    def read_data(self, data_file):
-        ''' Reads data vector from .ecsv format
-            
-            Convention is :
-            - space: 0 (Fourier-space) or 1 (Configuration-space)
-            - ell: multipole order 
-            - scale: k [h/Mpc] (Fourier-space) or r [Mpc/h] (Configuration-space)
-            See py/baopy/converter.py 
-
-            Parameters 
-            ----------
-            data_file: str 
-                Name of .ecsv file containing data vector 
-
-        '''
-
-        data = Table.read(data_file)
-        coords = { 'space': data['space'].data,
-                        'ell':   data['ell'].data,
-                        'scale': data['scale'].data}
-        values = data['correlation'].data
-
-        self.coords = coords
-        self.values = values
-
-    def read_cova(self, cova_file):
-        ''' Reads covariance matrix from .ecsv format
-
-            Parameters
-            ----------
-
-            cova_file: str 
-                Name of .ecsv file containing covariance matrix and its coordinates
-        '''
-
-        cova = Table.read(cova_file)
-
-        cova_coords = { 'space_1': cova['space_1'].data,
-                        'space_2': cova['space_2'].data,
-                        'ell_1':   cova['ell_1'].data,
-                        'ell_2':   cova['ell_2'].data,
-                        'scale_1': cova['scale_1'].data,
-                        'scale_2': cova['scale_2'].data
-                     }
-        cova_values = cova['covariance'].data
-        
-        self.cova_coords = cova_coords 
-        self.cova_values = cova_values
-    
-    def match_cova(self):
-        ''' Makes sure that data vector and covariance have matching coordinates 
-        
-        '''
-
-        assert self.coords is not None 
-        assert self.cova_coords is not None 
-
-        data_coords = self.coords
-        cova_coords = self.cova_coords 
-        cova_values = self.cova_values
-
-        cova_dict = {}
-        for i in range(cova_values.size):
-            s1 = cova_coords['space_1'][i]
-            l1 = cova_coords['ell_1'][i]
-            x1 = cova_coords['scale_1'][i]
-            s2 = cova_coords['space_2'][i]
-            l2 = cova_coords['ell_2'][i]
-            x2 = cova_coords['scale_2'][i]           
-            cova_dict[s1, l1, x1, s2, l2, x2] = cova_values[i]
-
-        #-- Second, fill covariance matrix with only data vector elements, in the same order
-        nbins = len(data_coords['space'])
-
-        cova_match = np.zeros((nbins, nbins))
-        for i in range(nbins):
-            s1 = data_coords['space'][i]
-            l1 = data_coords['ell'][i]
-            x1 = data_coords['scale'][i]
-            for j in range(nbins):
-                s2 = data_coords['space'][j]
-                l2 = data_coords['ell'][j]
-                x2 = data_coords['scale'][j]
-                cova_match[i, j] = cova_dict[s1, l1, x1, s2, l2, x2]
-
-        self.cova = cova_match
-
-
-    def apply_cuts(self, cuts):
-        ''' Applies cuts to data vector and covariance matrix consistently
-
-            Parameters
-            ----------
-            cuts: boolean np.array 
-                Numpy array with the mask to be applied to data vector and 
-                covariance matrix
-        '''
-
-        coords = self.coords
-        self.coords = {k: coords[k][cuts] for k in coords}
-        self.values = self.values[cuts]
-        if self.cova is not None:
-            cova = self.cova[:, cuts]
-            self.cova = cova[cuts]
-    
-    def inverse_cova(self, nmocks=0):
-        r''' Computes inverse of the covariance matrix
-            and applies Hartlap correction factor
-            
-            Parameters
-            ----------
-            nmocks: int, optional 
-                Number of mocks used in the construction of covariance matrix
-        
-        '''
-
-        inv_cova = np.linalg.inv(self.cova)
-        if nmocks > 0:
-            #-- Hartlap correction
-            correction = (1 - (self.values.size + 1.)/(nmocks-1))
-            inv_cova *= correction
-
-        self.hartlap_correction = correction  
-        self.inv_cova = inv_cova
-    
-    def plot(self, y_model=None, f=None, axs=None, power_k=1, power_r=2, label=None, figsize=(7, 8)):
-        ''' Plotting function
-
-            Plots the multipoles in both spaces (if available) with error bars 
-
-            Parameters
-            ----------
-            y_model : np.array, optional
-                Array containing the model evaluated at the data coordinates
-            f :  
-        '''
-        
-        coords = self.coords
-        space = np.unique(coords['space'])
-        n_space = space.size
-        ell = np.unique(coords['ell'])
-        n_ell = ell.size
-
-        values = self.values
-        data_error = np.sqrt(np.diag(self.cova))
-
-        if f is None:
-            f, axs = plt.subplots(ncols=n_space, nrows=n_ell, figsize=(8, 7), sharex='col', squeeze=False)
-
-        xlabels = [r'$k$ [$h$ Mpc$^{-1}$]', r'$r$ [$h^{-1}$ Mpc]']
-        if power_k == 0:
-            title_k = r'$P_\ell(k)$'
-        elif power_k == 1:
-            title_k = fr'$k P_\ell(k)$'
-        else:
-            title_k = fr'$k^{power_k} P_\ell(k)$'
-
-        if power_r == 0:
-            title_r =  r'$\xi_\ell(k)$'
-        elif power_r == 1:
-            title_r = fr'$r \xi_\ell(k)$'
-        else:
-            title_r =  fr'$r^{power_r} \xi_\ell(k)$'
-        titles = [title_k, title_r]
-
-
-        for col in range(n_space):
-            w_space = coords['space'] == space[col]
-            for row in range(n_ell):
-                w_ell = coords['ell'] == ell[row]
-                w = w_space & w_ell
-                x = coords['scale'][w]
-                power_x = power_k if space[col] == 0 else power_r
-                axs[row, col].errorbar(x, values[w]*x**power_x, data_error[w]*x**power_x, fmt='o',
-                    color=f'C{row}')
-                if not y_model is None:
-                    axs[row, col].plot(x, y_model[w]*x**power_x, color=f'C{row}')
-            axs[row, col].set_xlabel(xlabels[space[col]])
-            axs[0, col].set_title(titles[space[col]])
-
-        return f, axs
-    
-    def plot_cova(self, normalise=True, **kwargs):
-
-        cova = self.cova 
-        corr = cova/np.sqrt(np.outer(np.diag(cova), np.diag(cova)))
- 
-        z = corr if normalise else cova
-        plt.figure()
-        plt.pcolormesh(z, **kwargs)
-        plt.colorbar()
-
 class Chi2: 
     ''' Fitter class that minimises the $\chi^2$ 
     
@@ -277,7 +51,7 @@ class Chi2:
                             'ndof', 
                             'rchi2min',
                             'contours']
-        #-- Minos fields
+        #-- Minos fields to be saved 
         self.param_fields = ['number', 'value', 'error', 'merror', 
                              'lower_limit', 'upper_limit', 'is_fixed']
         self.output = None
@@ -576,7 +350,11 @@ class Chi2:
         return chi
 
 
+
+
 class Sampler:
+    '''First attempt to have a Monte Carlo Markov Chain sampler
+    '''
 
     def __init__(self, chi, 
         sampler_name='emcee', 
@@ -585,9 +363,27 @@ class Sampler:
         nwalkers=10, 
         use_pool=False,
         seed=0):
-        ''' Now working
-        
+        ''' Initialises the sampler from a Chi object
+
+        Parameters
+        ----------
+        chi : Chi
+            Chi object instance
+        sampler_name : str
+            Two options ``emcee`` or ``zeus``
+        nsteps : int
+            Number of steps per chain
+        nsteps_burn : int 
+            Number of steps to be considered as burn-in
+        nwalkers: int
+            Number of parallel chains
+        use_pool : bool
+            Use python multithreading
+        seed : int 
+            Seed for random sampler 
+
         ''' 
+
         if sampler_name == 'zeus':
             import zeus
             sampling_function = zeus.sampler
