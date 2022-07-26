@@ -15,7 +15,7 @@ for the redshift-space distortions (RSD).
 Requirements
 ============
 
-It requires the following packages:
+It requires the following packages::
 
   numpy
   scipy
@@ -27,7 +27,7 @@ It requires the following packages:
 Installation
 ============
 
-To install **baopy** : 
+To install **baopy**:: 
 
   git clone https://github.com/julianbautista/baopy 
 
@@ -42,22 +42,21 @@ Or in development mode (any change to Python code will take place immediately)::
 Testing
 =======
 
-There are some examples of BAO fits in 
+There are some examples of BAO fits in::
 
   cd examples/DR16_eBOSS_LRG 
 
-Then run one of the fits:
+Then run one of the fits::
 
   python fit_correlation_function.py 
 
-or 
+or::
 
   python fit_power_spectrum.py 
 
 
-API
-=== 
+.. toctree::
+  :maxdepth: 1
+  :caption: API
 
-Here are the documented modules 
-
-:ref:`api/baopy`
+  api/baopy
