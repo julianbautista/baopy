@@ -6,12 +6,28 @@
 Welcome to baopy's documentation!
 =================================
 
- 
+**baopy** is a package for fitting two-point statistics of cosmological galaxy surveys,
+either in Fourier space (power-spectrum) or configuration space (correlation function).
+
+It contains models for fitting for the baryon acoustic oscillations (BAO) or 
+for the redshift-space distortions (RSD). 
+
+Requirements
+============
+
+It requires the following packages:
+
+  numpy
+  scipy
+  iminuit
+  astropy
+  hankl
+  
 
 Installation
 ============
 
-To install ``baopy`` : 
+To install **baopy** : 
 
   git clone https://github.com/julianbautista/baopy 
 
@@ -28,15 +44,15 @@ Testing
 
 There are some examples of BAO fits in 
 
-   cd examples/DR16_eBOSS_LRG 
+  cd examples/DR16_eBOSS_LRG 
 
 Then run one of the fits:
 
-   python fit_correlation_function.py 
+  python fit_correlation_function.py 
 
 or 
 
-   python fit_power_spectrum.py 
+  python fit_power_spectrum.py 
 
 
 API
@@ -44,4 +60,4 @@ API
 
 Here are the documented modules 
 
-  api/baopy
+:ref:`api/baopy`
