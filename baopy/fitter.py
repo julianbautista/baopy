@@ -1,10 +1,10 @@
 ''' Module containing the main fitter class and a data handler '''
 import numpy as np
-import pylab as plt
+import matplotlib.pyplot as plt
 import pickle
+
 import iminuit
-import scipy.linalg
-from scipy.optimize import curve_fit
+
 from astropy.table import Table 
 
 plt.ion()

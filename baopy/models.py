@@ -3,12 +3,14 @@
 '''
 
 import numpy as np
-import pylab as plt
+import matplotlib.pyplot as plt
 import hankl
+
 import scipy.interpolate 
 import scipy.linalg
 from scipy.optimize import curve_fit
 from scipy.interpolate import UnivariateSpline
+
 from iminuit import Minuit
 from iminuit.cost import LeastSquares
 
