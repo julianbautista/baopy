@@ -17,9 +17,7 @@ Installation
 
 To install ``baopy`` : 
 
-.. code-block:: console
-
-   $ git clone https://github.com/julianbautista/baopy 
+  git clone https://github.com/julianbautista/baopy 
 
 To install the code::
 
