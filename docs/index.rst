@@ -10,17 +10,23 @@ Welcome to baopy's documentation!
    :maxdepth: 2
    :caption: Contents:
 
+   api/baopy
 
+Installation
+============
 
-Indices and tables
-==================
+To install ``baopy`` : 
 
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`
+.. code-block:: console
 
-* :ref:`modules`
+   $ git clone https://github.com/julianbautista/baopy 
 
-* :ref:`baopy`
+To install the code::
+
+  python setup.py install --user
+
+Or in development mode (any change to Python code will take place immediately)::
+
+  python setup.py develop --user
 
 

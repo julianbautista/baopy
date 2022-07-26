@@ -36,7 +36,9 @@ intersphinx_mapping = {
     'scipy': ('https://docs.scipy.org/doc/scipy/reference/', None),
     'astropy': ('http://docs.astropy.org/en/stable/', None),
     'numba': ('https://numba.readthedocs.io/en/stable/', None),
-    'pandas': ('https://pandas.pydata.org/docs/', None)}
+    'pandas': ('https://pandas.pydata.org/docs/', None),
+    'sphinx': ('https://www.sphinx-doc.org/en/master/', None),
+    }
 
 intersphinx_disabled_domains = ['std']
 
@@ -44,4 +46,5 @@ intersphinx_disabled_domains = ['std']
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
 html_theme = 'alabaster'
+html_theme = 'sphinx_rtd_theme'
 #html_static_path = ['_static']
