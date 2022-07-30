@@ -113,7 +113,6 @@ class Model:
         xi_mult = self.xi_mult        
         if not self.window_mult is None:
             pk_mult = self.pk_mult_convol
-            #xi_mult = self.xi_mult_convol
         else:
             pk_mult = self.pk_mult
 
@@ -174,7 +173,6 @@ class Model:
 
         if convolved and not self.window_mult is None:
             pk_mult = self.pk_mult_convol
-            #xi_mult = self.xi_mult_convol
         else: 
             pk_mult = self.pk_mult
         xi_mult = self.xi_mult
@@ -325,6 +323,7 @@ class BAO(Model):
 
         print(f'Reading linear power spectrum from: {pk_file}')
         k, pk = np.loadtxt(pk_file, unpack=True)
+
         #-- Fourier transform the power spectrum to correlation function
         r, xi = hankl.P2xi(k, pk, l=0, lowring=True)
         xi = xi.real
@@ -635,8 +634,8 @@ class BAO(Model):
         #-- Reconstruction damping
         #-- exp^{ -0.5 k^2 \mu^2 \Sigma_r^2 }
         if 'sigma_rec' in pars and pars['sigma_rec'] != 0:
-            recon_damp = 1 - np.exp(-0.5*(ak_2d*pars['sigma_rec'])**2) 
-            #recon_damp =  1 - np.exp(-0.5*( k_2d*pars['sigma_rec'])**2) 
+            #recon_damp = 1 - np.exp(-0.5*(ak_2d*pars['sigma_rec'])**2) 
+            recon_damp =  1 - np.exp(-0.5*( k_2d*pars['sigma_rec'])**2) 
         else:
             recon_damp = 1.
 

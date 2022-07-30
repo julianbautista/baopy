@@ -167,7 +167,8 @@ class Data:
         self.hartlap_correction = correction  
         self.inv_cova = inv_cova
     
-    def plot(self, y_model=None, f=None, axs=None, power_k=1, power_r=2, figsize=(7, 8)):
+    def plot(self, y_model=None, f=None, axs=None, power_k=1, power_r=2, fill_between=False,
+        alpha=None, figsize=(7, 8)):
         ''' 
         Plotting function
 
@@ -185,7 +186,9 @@ class Data:
             Scales the plotted power spectra by ``k**power_k``
         power_r : int 
             Scales the plotted correlation function by ``r**power_r``
-        
+        fill_between : bool 
+            If true, plots a shaded area instead of points with error bars
+
         '''
         
         coords = self.coords
@@ -227,7 +230,10 @@ class Data:
                 y_value = values[w]*x**power_x
                 y_error = data_error[w]*x**power_x
                 ax = axs[row, col]
-                ax.errorbar(x, y_value, y_error, fmt='o', color=f'C{row}')
+                if fill_between: 
+                    ax.fill_between(x, y_value-y_error, y_value+y_error, color=f'C{row}', alpha=alpha)
+                else: 
+                    ax.errorbar(x, y_value, y_error, fmt='o', color=f'C{row}', alpha=alpha)
                 if not y_model is None:
                     axs[row, col].plot(x, y_model[w]*x**power_x, color=f'C{row}')
             axs[row, col].set_xlabel(xlabels[space[col]])
