@@ -236,6 +236,7 @@ class Data:
                     ax.errorbar(x, y_value, y_error, fmt='o', color=f'C{row}', alpha=alpha)
                 if not y_model is None:
                     axs[row, col].plot(x, y_model[w]*x**power_x, color=f'C{row}')
+                ax.grid(ls=':', color='k', alpha=0.3)
             axs[row, col].set_xlabel(xlabels[space[col]])
             axs[0, col].set_title(titles[space[col]])
 
