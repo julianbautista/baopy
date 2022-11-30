@@ -446,6 +446,7 @@ class Sampler:
         pars = self.pars
         chi = self.chi 
 
+        global log_prob
         def log_prob(p_free):
             #print(p_free)
             p_all = []
