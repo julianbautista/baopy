@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 from astropy.table import Table 
 
 
+
 class Data: 
     ''' Class dealing with data vector and covariance matrices 
         
