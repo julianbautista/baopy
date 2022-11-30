@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from astropy.table import Table 
 
-toto='test' 
+
 
 class Data: 
     ''' Class dealing with data vector and covariance matrices 
