@@ -1,4 +1,3 @@
-from astropy.table import Table 
 import baopy.fitter
 import baopy.models
 import baopy.data
@@ -15,10 +14,10 @@ cuts = (space == 1 ) & ((ell==0) | (ell==2)| (ell==4)) & ((scale >= min) & (scal
 #-- Invert covariance matrix after cuts and apply correction factors 
 #-- nmocks = number of mocks used to compute cov matrix
 dat.apply_cuts(cuts)
-dat.match_cova()
 dat.inverse_cova(nmocks=1000)
 
 #-- Read power spectra, 1-loop bias terms and RSD correction terms
+#-- Those terms are computed with pyRegPT : https://github.com/adematti/pyregpt
 mod = baopy.models.RSD_TNS(
         pk_regpt_file= 'regpt/pk_camb_z0.698_challenge_pk2loop.txt',
         bias_file    = 'regpt/pk_camb_z0.698_challenge_bias1loop.txt',
