@@ -1,4 +1,3 @@
-from astropy.table import Table 
 import baopy.fitter
 import baopy.models
 import baopy.data
