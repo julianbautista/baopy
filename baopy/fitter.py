@@ -2,7 +2,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import pickle
-
+from astropy.table import Table
 import iminuit
 
 class Chi2: 
@@ -423,7 +423,8 @@ class Sampler:
             start[:, i] = np.random.randn(nwalkers)*3*error+value
             limits[i] = [limit_low, limit_upp]
             i+=1 
-
+            
+        self.parameters = parameters
         self.fixed = fixed 
         self.limits = limits
         self.npars = npars 
@@ -484,3 +485,13 @@ class Sampler:
         chain = sampler.get_chain(flat=True)
         self.sampler = sampler
         self.chain = chain
+
+    def save(self, filename):
+        chain = self.chain
+        parameters = self.parameters
+        
+        tab=Table({})
+        for i, par in enumerate(parameters):
+            tab[par]=chain[:,i] 
+            
+        tab.write(filename,overwrite=True)

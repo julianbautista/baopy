@@ -691,12 +691,13 @@ class BAO(Model):
 
         
 class RSD_TNS(Model):
+    
     ''' 
-    Implements the TNS model by 
-    Taruya, Nishimishi & Saito 2010 
-    https://ui.adsabs.harvard.edu/abs/2010PhRvD..82f3522T/abstract 
-
+    Implements the TNS model (Taruya et al. 2012)
     Written by Vincenzo Aronica and Julian Bautista
+    
+    2-loop Power spectra, 1-loop bias terms and RSD correction terms 
+    can be computed with pyRegPT : https://github.com/adematti/pyregpt
 
     '''
     def __init__(self, 
@@ -720,20 +721,18 @@ class RSD_TNS(Model):
             xi_regpt[i] = xi.real
 
         #-- Read bias expansion terms
-        #-- pk_b2d, pk_bs2d, pk_b22, pk_b2s2, pk_bs22, pk_b2t, pk_bs2t, sigma3sq = np.loadtxt(bias_file, unpack=True)
         pk_bias = np.loadtxt(bias_file, unpack=True)[1:]
         w = k>kmax_cutoff
+        
         pk_bias[:, w] *= np.exp( - (k[w]/kmax_cutoff-1)**2)
 
         a_terms = np.loadtxt(a2loop_file, unpack=True)[1:]
-        #A[0,:],A[1,:],A[2,:],A[3,:],A[4,:]
 
         b_terms = np.loadtxt(b2loop_file, unpack=True)[1:]
-        #B[0,:],B[1,:],B[2,:],B[3,:],B[4,:],B[5,:],B[6,:],B[7,:],B[8,:]
 
         self.r = r
         self.k = k
-        #self.pk_lin = pk_lin
+
         self.pk_regpt = pk_regpt
         self.pk_bias = pk_bias
         self.a_terms = a_terms
@@ -785,13 +784,9 @@ class RSD_TNS(Model):
 
     def get_pk_2d(self, pars, ell_max=4):
         ''' Compute P(k, mu)  eq. (2.198) of De Mattia Thesis 
-        
-        Parameters
-        ----------
-        
-        pars : dict 
-            Dictionary containing the model parameters
-            Available parameters: 
+        Input
+        -----
+        pars (dict): available parameters are:
             alpha_para = scaling of radial separations
             alpha_perp = scaling of transverse separations
             b1 = linear bias
@@ -800,23 +795,22 @@ class RSD_TNS(Model):
             b3nl = other bias paramater
             beta = redshift space distortion parameter
             sigma_fog = Finger's of God damping
-            shot_noise = value for shot noise power
+            Ng = value for shot noise power
         '''
 
         b1 = pars['b1']
         b2 = pars['b2']
 
-        #-- If not free, we fix bs2 and b3nl (eq. (2.157)/(2.158) DeMattia Thesis) 
+        #-- If not free, we fix bs2 and b3nl (eq. (15)/(16) DeMattia et al. 2020) 
         bs2 = pars['bs2'] if 'bs2' in pars else -4/7*(b1-1)
         b3nl = pars['b3nl'] if 'b3nl' in pars else 32/315 * (b1-1)
 
-        #beta = pars['beta']
         f = pars['f']
         beta = f/b1
-        shot_noise = pars['shot_noise']
+        sn = pars['shot_noise']
         
-        alpha_perp = pars['alpha_perp']
-        alpha_para = pars['alpha_para']
+        aper = pars['aper']
+        apar = pars['apar']
 
 
         k = self.k
@@ -834,8 +828,8 @@ class RSD_TNS(Model):
 
         #-- Scale k and mu by alphas 
         #-- This is the correct formula (Eq. 58 and 59 from Beutler et al. 2014)
-        factor_ap = alpha_para/alpha_perp
-        ak_2d = k_2d/alpha_perp  * np.sqrt( 1 + mu_2d**2 * (1/factor_ap**2 - 1) )
+        factor_ap = apar/aper
+        ak_2d = k_2d/aper  * np.sqrt( 1 + mu_2d**2 * (1/factor_ap**2 - 1) )
         amu_2d = mu_2d/factor_ap / np.sqrt( 1 + mu_2d**2 * (1/factor_ap**2 - 1) )
         amu = mu /factor_ap / np.sqrt( 1 + mu**2 * (1/factor_ap**2 - 1) )
 
@@ -859,7 +853,7 @@ class RSD_TNS(Model):
              beta**2 *  amu**4 * a_terms_2d[2] +  
              beta**3 *  amu**4 * a_terms_2d[3] + 
              beta**3 *  amu**6 * a_terms_2d[4] ) 
-
+             
         B = (
             beta**2 *  amu**2 * b_terms_2d[0] + 
             beta**3 *  amu**2 * b_terms_2d[1] + 
@@ -879,27 +873,30 @@ class RSD_TNS(Model):
             2*b1*b3nl * pk_bias_2d[7] + 
             b2**2 * pk_bias_2d[2] + 
             2*b2*bs2 * pk_bias_2d[3] + 
-            bs2**2 * pk_bias_2d[4] 
-            )
+            bs2**2 * pk_bias_2d[4] )
+
 
         pk_g_dt = (b1 * pk_regpt_2d[1] + 
                  b2 * pk_bias_2d[5] + 
                  bs2 * pk_bias_2d[6] + 
                  b3nl * pk_bias_2d[7])
 
+
         pk_g_tt = pk_regpt_2d[2]
 
-        #-- Build final model
-        pk_rsd = 1 
         #-- Fingers of God
+        pk_rsd = 1 
         pk_rsd *= fog**2
-        
+                                                             
         #-- Final model 
         pk_rsd *= (pk_g_dd + 
                    pk_g_dt * 2 * amu**2 * beta * b1  + 
                    pk_g_tt * (amu**2 * beta * b1)**2 + 
                    b1**3*A + 
-                   b1**4*B )
+                   b1**4*B)
+                                                             
+        
+
         
         #-- Multipoles of pk
         pk_mult = multipoles(pk_rsd, ell_max=ell_max)
@@ -907,17 +904,16 @@ class RSD_TNS(Model):
         #-- Multipoles of xi
         ell = np.arange(0, ell_max+2, 2)
         xi_mult = np.zeros((ell.size, k.size))
+                                                             
         for i in range(ell.size):
             r, xi = hankl.P2xi(k, pk_mult[i], l=ell[i], lowring=True)
-            xi_mult[i] = xi.real 
-        
+            xi_mult[i] = xi.real
+            
         #-- Adding shot noise now to monopole only so it is not included in xi
-        pk_mult[0] += shot_noise
-        #pk_rsd += shot_noise 
+        pk_mult[0] += sn
         
-        #-- AP Jacobian for pk only 
-        pk_mult *= 1/alpha_para/alpha_perp**2
-        #pk_rsd *= 1/alpha_para/alpha_perp**2
+         #-- AP Jacobian for pk only 
+        pk_mult *= 1/apar/aper*2
 
         self.ell = ell
         self.mu = mu
@@ -928,7 +924,7 @@ class RSD_TNS(Model):
         self.ak_2d = ak_2d
         self.mu_2d = mu_2d 
         self.k_2d = k_2d
-        #self.pk_2d = pk_rsd 
+        self.pk_2d = pk_rsd
 
         #-- Multipole quantities
         self.r_mult = r
@@ -937,9 +933,233 @@ class RSD_TNS(Model):
         self.xi_mult = xi_mult
 
         if not self.window_mult is None:
-            #-- The convolved multipoles are computed from xi_mult 
-            #-- so we have to add shot_noise and the Jacobian terms
             self.get_multipoles_window()
-            self.pk_mult_convol[0] += shot_noise
-            self.pk_mult_convol *= 1/alpha_para/alpha_perp**2
+            self.pk_mult_convol[0] += sn
+            self.pk_mult_convol *= 1/apar/aper**2
 
+            
+class RSD_ME_red(Model):
+    ''' 
+    Implements of Moment Extansion model (Chen, Vlah & White (2020), https://arxiv.org/abs/2005.00523)
+    using velocileptors : https://github.com/sfschen/velocileptors
+    '''
+    def __init__(self, 
+        pk_lin_file=None, theory = None): 
+        super().__init__()
+        
+        k1,pk_lin=np.loadtxt(pk_lin_file).T
+        
+        if theory == 'LPT':
+            from velocileptors.LPT.moment_expansion_fftw import MomentExpansion
+        if theory == 'EPT':
+            from velocileptors.EPT.moment_expansion_fftw import MomentExpansion
+            
+
+        mome = MomentExpansion(k1,pk_lin)
+        
+        moments = MomentExpansion(
+                                k1,  pk_lin, beyond_gauss = False, 
+                                one_loop= True,kmin = 5e-4, kmax = 0.4, 
+                                nk = 500, cutoff=2, extrap_min = -4, extrap_max = 3, 
+                                N = 2000, threads=1, jn=5, shear=True
+                                )
+        
+        
+        self.k1 = k1
+        self.pk_lin = pk_lin
+        self.window_mult = None
+        self.moments=moments
+        
+    def get_pk_2d(self, pars, ell_max=4):
+        ''' 
+        Input
+        -----
+        pars (dict): available parameters are:
+
+        '''
+        k1 = self.k1
+        pk_lin = self.pk_lin
+        moments=self.moments
+        
+        b1 = pars['b1'] if 'b1' in pars else 0
+        b2 = pars['b2'] if 'b2' in pars else 0
+        bs = pars['bs'] if 'bs' in pars else 0
+        b3 = pars['b3'] if 'b3' in pars else 0
+        alpha0 = pars['alpha0'] if 'alpha0' in pars else 0
+        alpha2 = pars['alpha2'] if 'alpha2' in pars else 0
+        alpha4 = pars['alpha4'] if 'alpha4' in pars else 0
+        sn = pars['sn'] if 'sn' in pars else 0
+        s0 = pars['s0']if 's0' in pars else 0
+        f = pars['f']  if 'f' in pars else 0
+        aper = pars['aper'] if 'aper' in pars else 1
+        apar = pars['apar'] if 'apar' in pars else 1
+
+        param = [b1, b2, bs, b3, alpha0, alpha2, alpha4,sn,s0]
+        
+        k = moments.kv
+        nus, ws = np.polynomial.legendre.leggauss(2*10)
+        nus_calc = nus[0:10]
+        
+        L0 = np.polynomial.legendre.Legendre((1))(nus)
+        L2 = np.polynomial.legendre.Legendre((0,0,1))(nus)
+        L4 = np.polynomial.legendre.Legendre((0,0,0,0,1))(nus)
+        
+        nk=500
+        pknu = np.zeros((len(nus),nk))
+
+        for j, nu in enumerate(nus_calc):
+
+            if 'sigma_fog' in pars and pars['sigma_fog'] != 0:
+                fog = 1./( 1 + 0.5*(nu*k*pars['sigma_fog'])**2)**2
+            else : 
+                fog=1
+                
+            pknu[j,:] = fog*moments.compute_redshift_space_power_at_mu(param,f,nu,reduced=True,counterterm_c3=0,apar=apar,aperp=aper)[1]
+            
+        pknu[10:,:] = np.flip(pknu[0:10],axis=0)
+        
+        p0k = 0.5 * np.sum((ws*L0)[:,None]*pknu,axis=0)
+        p2k = 2.5 * np.sum((ws*L2)[:,None]*pknu,axis=0)
+        p4k = 4.5 * np.sum((ws*L4)[:,None]*pknu,axis=0)
+        
+        kint = np.logspace(-5,3,1024)
+        damping = np.exp(-(kint/10)**2)
+
+        p0int = loginterp(k, p0k)(kint) * damping
+        p2int = loginterp(k, p2k)(kint) * damping
+        p4int = loginterp(k, p4k)(kint) * damping
+
+        r,xi0 = hankl.P2xi(kint, p0int, l=0, lowring=True)
+        r,xi2 = hankl.P2xi(kint, p2int, l=2, lowring=True)
+        r,xi4 = hankl.P2xi(kint, p4int, l=4, lowring=True)   
+        
+        pk_mult = [p0k,p2k,p4k]
+        xi_mult = [xi0.real,xi2.real,xi4.real]
+        ell = np.arange(0, ell_max+2, 2)
+        
+        
+        #-- Multipole quantities
+        self.r = r
+        self.k = k
+        self.ell = ell
+        self.pk_mult = pk_mult
+        self.xi_mult = xi_mult
+
+
+                 
+class RSD_ME_ext(Model):
+    
+    ''' 
+    Implements of Moment Extansion model (Chen, Vlah & White (2020), https://arxiv.org/abs/2005.00523)
+    using velocileptors : https://github.com/sfschen/velocileptors
+    '''
+                                                             
+    def __init__(self, 
+        pk_lin_file=None, theory = None): 
+        super().__init__()
+        k1,pk_lin=np.loadtxt(pk_lin_file).T
+        
+        if theory == 'LPT':
+            from velocileptors.LPT.moment_expansion_fftw import MomentExpansion
+        if theory == 'EPT':
+            from velocileptors.EPT.moment_expansion_fftw import MomentExpansion
+            
+
+        mome = MomentExpansion(k1,pk_lin)
+        
+        moments = MomentExpansion(
+                                k1,  pk_lin, beyond_gauss = False, 
+                                one_loop= True,kmin = 5e-4, kmax = 0.4, 
+                                nk = 500, cutoff=2, extrap_min = -4, extrap_max = 3, 
+                                N = 2000, threads=1, jn=5, shear=True
+                                )
+        
+        self.k1 = k1
+        self.pk_lin = pk_lin
+        self.window_mult = None
+        self.moments=moments
+
+    def get_pk_2d(self, pars, ell_max=4):
+        ''' 
+        Input
+        -----
+        pars (dict): available parameters are:
+
+        '''
+        k1 = self.k1
+        pk_lin = self.pk_lin
+        moments=self.moments
+        
+        b1 = pars['b1'] if 'b1' in pars else 0
+        b2 = pars['b2'] if 'b2' in pars else 0
+        bs = pars['bs'] if 'bs' in pars else 0 
+        b3 = pars['b3'] if 'b3' in pars else 0
+        alpha = pars['alpha'] if 'alpha' in pars else 0
+        alpha_v = pars['alpha_v'] if 'alpha_v' in pars else 0
+        alpha_s0 = pars['alpha_s0'] if 'alpha_s0' in pars else 0
+        alpha_s2 = pars['alpha_s2'] if 'alpha_s2' in pars else 0
+        sn = pars['sn'] if 'sn' in pars else 0
+        sv = pars['sv'] if 'sv' in pars else 0
+        s0 = pars['s0'] if 's0' in pars else 0
+        c3 = pars['c3'] if 'c3' in pars else 0
+        f = pars['f']
+        beta = f/b1     
+        aper = pars['aper']
+        apar = pars['apar']
+
+        param = [b1, b2, bs, b3, alpha, alpha_v, alpha_s0, alpha_s2, sn, sv, s0]
+        
+        k = moments.kv
+        nus, ws = np.polynomial.legendre.leggauss(2*10)
+        nus_calc = nus[0:10]
+        
+        L0 = np.polynomial.legendre.Legendre((1))(nus)
+        L2 = np.polynomial.legendre.Legendre((0,0,1))(nus)
+        L4 = np.polynomial.legendre.Legendre((0,0,0,0,1))(nus)
+        
+        nk = 500
+        pknu = np.zeros((len(nus),nk))
+
+        for j, nu in enumerate(nus_calc):
+
+            if 'sigma_fog' in pars and pars['sigma_fog'] != 0:
+                fog = 1./( 1 + 0.5*(nu*k*pars['sigma_fog'])**2)**2
+            else : 
+                fog=1
+                
+            pknu[j,:] = fog*moments.compute_redshift_space_power_at_mu(param,f,nu,reduced=False,counterterm_c3=c3,apar=apar,aperp=aper)[1]
+            
+        pknu[10:,:] = np.flip(pknu[0:10],axis=0)
+        
+        
+        
+        
+        
+        p0k = 0.5 * np.sum((ws*L0)[:,None]*pknu,axis=0)
+        p2k = 2.5 * np.sum((ws*L2)[:,None]*pknu,axis=0)
+        p4k = 4.5 * np.sum((ws*L4)[:,None]*pknu,axis=0)
+        
+            
+        
+        kint = np.logspace(-5,3,1024)
+        damping = np.exp(-(kint/10)**2)
+
+        p0int = loginterp(k, p0k)(kint) * damping
+        p2int = loginterp(k, p2k)(kint) * damping
+        p4int = loginterp(k, p4k)(kint) * damping
+
+        r,xi0 = hankl.P2xi(kint, p0int, l=0, lowring=True)
+        r,xi2 = hankl.P2xi(kint, p2int, l=2, lowring=True)
+        r,xi4 = hankl.P2xi(kint, p4int, l=4, lowring=True)   
+        
+        pk_mult = [p0k,p2k,p4k]
+        xi_mult = [xi0.real,xi2.real,xi4.real]
+        
+        ell = np.arange(0, ell_max+2, 2)        
+
+        #-- Multipole quantities
+        self.r = r
+        self.k = k
+        self.ell = ell
+        self.pk_mult = pk_mult
+        self.xi_mult = xi_mult
