@@ -318,12 +318,13 @@ class BAO(Model):
     
     '''
 
-    def __init__(self, pk_file=None, nopeak_method='spline'): 
+    def __init__(self, k=None, pk=None, pk_file=None, nopeak_method='spline'): 
         super().__init__()
 
-        print(f'Reading linear power spectrum from: {pk_file}')
-        k, pk = np.loadtxt(pk_file, unpack=True)
-
+        if not pk_file is None:
+            print(f'Reading linear power spectrum from: {pk_file}')
+            k, pk = np.loadtxt(pk_file, unpack=True)
+        
         #-- Fourier transform the power spectrum to correlation function
         r, xi = hankl.P2xi(k, pk, l=0, lowring=True)
         xi = xi.real
