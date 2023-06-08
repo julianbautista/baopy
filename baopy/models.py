@@ -13,7 +13,10 @@ import scipy.interpolate
 
 from iminuit import Minuit
 from iminuit.cost import LeastSquares
-
+from velocileptors.Utils.spherical_bessel_transform import SphericalBesselTransform
+from velocileptors.Utils.loginterp import loginterp
+from pypower import MeshFFTWindow
+from velocileptors.LPT.lpt_rsd_fftw import LPT_RSD
 
 def legendre(ell, mu):
     ''' Legendre polynomials 
@@ -205,6 +208,83 @@ class Model:
         axs[0, 1].set_title(r'$r^{{{power_r}}} \xi_\ell(k)$'.format(power_r=power_r))
 
         return f, axs
+    
+    def plot_multipoles_ME(self, 
+        f=None, axs=None, ell_max=None, 
+        k_range=(0., 0.4), r_range=(5., 200), 
+        power_k=1, power_r=2, convolved=True, ls=None,label = None,figsize=None):
+        ''' Plots the multipoles computed for a set of parameters 
+        
+        Parameters
+        ----------
+        f : plt.figure.Figure, optional
+            If not provided, creates a new figure 
+        axs : plt.axes.Axes, optional
+            If not provided, creates a new set of axes 
+        ell_max : int, optional
+            Maximum order of multipoles to be plotted 
+        k_range : tuple
+            Range of wavenumbers in h/Mpc to be plotted 
+        r_range : tuplt
+            Range of separations in Mpc/h to be plotted 
+        power_k : int
+            Scales the plotted power spectra by ``k**power_k``
+        power_r : int 
+            Scales the plotted correlation function by ``r**power_r``
+        convolved : bool
+            If true, plots the convolved power spectrum (the correlation function remains the same)
+        
+        Returns
+        -------
+        f : plt.figure.Figure 
+            Figure object 
+        axs : 
+            Set of axes 
+
+        '''
+        ell = self.ell
+        n_ell = ell.size
+        k = self.k
+        r = self.r
+        wr = (r>=r_range[0]) & (r<=r_range[1])
+        wk = (k>=k_range[0]) & (k<=k_range[1])
+
+        if convolved and not self.window_mult is None:
+            pk_mult = self.pk_mult_convol
+        else: 
+            pk_mult = self.pk_mult
+        xi_mult = self.xi_mult
+
+        if ell_max is None:
+            n_ell = ell.size
+        else:
+            n_ell = ell_max//2 + 1
+
+        if f is None:
+            f, axs = plt.subplots(ncols=2, nrows=n_ell, figsize=(12,8), sharex='col', gridspec_kw={'hspace': 0.})
+
+        for i in range(n_ell):
+            x = k[wk] 
+            y = pk_mult[i][wk]*x**power_k
+            axs[i, 0].plot(x, y, color=f'C{i}', ls=ls, label=label)
+            axs[i, 0].set_xlim(k_range)
+            if label is not None:
+                axs[0, 0].legend()
+        
+        for i in range(n_ell):
+            x = r[wr]
+            y = xi_mult[i][wr] * x**power_r
+            axs[i, 1].plot(x, y, color=f'C{i}', ls=ls)
+            axs[i, 1].set_xlim(r_range)
+
+        axs[-1, 0].set_xlabel(r'$k$ [$h$ Mpc$^{-1}$]')
+        axs[-1, 1].set_xlabel(r'$r$ [$h^{-1}$ Mpc]')
+        axs[0, 0].set_title(r'$k^{{{power_k}}} P_\ell(k)$'.format(power_k=power_k))
+        axs[0, 1].set_title(r'$r^{{{power_r}}} \xi_\ell(k)$'.format(power_r=power_r))
+
+        return f, axs
+    
+    
 
     def test_with_fake_data(self):
 
@@ -943,8 +1023,11 @@ class RSD_ME_red(Model):
     Implements of Moment Extansion model (Chen, Vlah & White (2020), https://arxiv.org/abs/2005.00523)
     using velocileptors : https://github.com/sfschen/velocileptors
     '''
-    def __init__(self, 
-        pk_lin_file=None, theory = None): 
+    def __init__(self, pk_lin_file=None, theory = None, 
+                 local_bias = False, damp_term = True, damp = 10, pktoxi='hankl',
+                 logint = True,kmin = 5e-3, kmax = 1,nk = 500,win=None,shot_noise=0,
+                 extrap_min = -5, extrap_max = 3, N = 2000):
+        
         super().__init__()
         
         k1,pk_lin=np.loadtxt(pk_lin_file).T
@@ -959,16 +1042,36 @@ class RSD_ME_red(Model):
         
         moments = MomentExpansion(
                                 k1,  pk_lin, beyond_gauss = False, 
-                                one_loop= True,kmin = 5e-4, kmax = 0.4, 
-                                nk = 500, cutoff=2, extrap_min = -4, extrap_max = 3, 
-                                N = 2000, threads=1, jn=5, shear=True
+                                one_loop= True,kmin = kmin, kmax = kmax, 
+                                nk = nk, cutoff=2, extrap_min = extrap_min, extrap_max = extrap_max, 
+                                N = N, threads=1, jn=5, shear=True
                                 )
         
-        
+        #moments = MomentExpansion(
+        #                k1,  pk_lin, beyond_gauss = False, 
+        #                one_loop= True,kmin = 5e-4, kmax = 0.4, 
+        #                nk = len(k1), cutoff=2, extrap_min = -4, extrap_max = 3, 
+        #                N = 2000, threads=1, jn=5, shear=True
+        #                )
+        #
+        self.win = win
+        self.logint = logint
+        self.pktoxi = pktoxi
+        self.local_bias = local_bias
+        self.damp = damp
+        self.damp_term = damp_term
         self.k1 = k1
         self.pk_lin = pk_lin
         self.window_mult = None
         self.moments=moments
+        self.shot_noise=shot_noise
+        
+        self.kint = np.logspace(extrap_min,extrap_max,N)
+        self.sphr = SphericalBesselTransform(self.kint,L=5,fourier=True)
+        
+        p=loginterp(k1, pk_lin)(moments.kv)
+        r,_ = hankl.P2xi(self.kint, loginterp(moments.kv, p)(self.kint), l=0, lowring=True)
+        self.r=r
         
     def get_pk_2d(self, pars, ell_max=4):
         ''' 
@@ -977,34 +1080,52 @@ class RSD_ME_red(Model):
         pars (dict): available parameters are:
 
         '''
+        
+        logint=self.logint
+        pktoxi = self.pktoxi
+        sphr = self.sphr
+        kint = self.kint
+        damp_term = self.damp_term
+        damp = self.damp
+        local_bias = self.local_bias
         k1 = self.k1
         pk_lin = self.pk_lin
         moments=self.moments
+        win = self.win
+        shot_noise=self.shot_noise
         
         b1 = pars['b1'] if 'b1' in pars else 0
         b2 = pars['b2'] if 'b2' in pars else 0
-        bs = pars['bs'] if 'bs' in pars else 0
-        b3 = pars['b3'] if 'b3' in pars else 0
+        
+
+        if local_bias == False : 
+            bs = pars['bs'] if 'bs' in pars else 0 
+            b3 = pars['b3'] if 'b3' in pars else 0
+        else : 
+            bs = pars['bs'] if 'bs' in pars else -4/7*(b1-1) 
+            b3 = pars['b3'] if 'b3' in pars else 32/315 * (b1-1)
+ 
+            
         alpha0 = pars['alpha0'] if 'alpha0' in pars else 0
         alpha2 = pars['alpha2'] if 'alpha2' in pars else 0
         alpha4 = pars['alpha4'] if 'alpha4' in pars else 0
         sn = pars['sn'] if 'sn' in pars else 0
-        s0 = pars['s0']if 's0' in pars else 0
+        sn2 = pars['sn2']if 'sn2' in pars else 0
         f = pars['f']  if 'f' in pars else 0
         aper = pars['aper'] if 'aper' in pars else 1
         apar = pars['apar'] if 'apar' in pars else 1
 
-        param = [b1, b2, bs, b3, alpha0, alpha2, alpha4,sn,s0]
+        param = [b1, b2, bs, b3, alpha0, alpha2, alpha4,sn,sn2]
         
         k = moments.kv
-        nus, ws = np.polynomial.legendre.leggauss(2*10)
-        nus_calc = nus[0:10]
+        nk=len(k)
+        nus, ws = np.polynomial.legendre.leggauss(2*5)
+        nus_calc = nus[0:5]
         
         L0 = np.polynomial.legendre.Legendre((1))(nus)
         L2 = np.polynomial.legendre.Legendre((0,0,1))(nus)
         L4 = np.polynomial.legendre.Legendre((0,0,0,0,1))(nus)
         
-        nk=500
         pknu = np.zeros((len(nus),nk))
 
         for j, nu in enumerate(nus_calc):
@@ -1014,49 +1135,134 @@ class RSD_ME_red(Model):
             else : 
                 fog=1
                 
-            pknu[j,:] = fog*moments.compute_redshift_space_power_at_mu(param,f,nu,reduced=True,counterterm_c3=0,apar=apar,aperp=aper)[1]
+            pknu[j,:] = fog*moments.compute_redshift_space_power_at_mu(param,f,nu,reduced=True,counterterm_c3=0,apar=apar,aperp=aper)[1]  
             
-        pknu[10:,:] = np.flip(pknu[0:10],axis=0)
+        pknu[5:,:] = np.flip(pknu[0:5],axis=0)
+        p0k = 0.5 * np.sum((ws*L0)[:,None]*pknu,axis=0)
+        p2k = 2.5 * np.sum((ws*L2)[:,None]*pknu,axis=0)
+        p4k = 4.5 * np.sum((ws*L4)[:,None]*pknu,axis=0)
         
         p0k = 0.5 * np.sum((ws*L0)[:,None]*pknu,axis=0)
         p2k = 2.5 * np.sum((ws*L2)[:,None]*pknu,axis=0)
         p4k = 4.5 * np.sum((ws*L4)[:,None]*pknu,axis=0)
         
-        kint = np.logspace(-5,3,1024)
-        damping = np.exp(-(kint/10)**2)
+        if damp_term == True :
+            
+            damping = np.exp(-(kint/damp)**2)
+            
+            if logint == True:
 
-        p0int = loginterp(k, p0k)(kint) * damping
-        p2int = loginterp(k, p2k)(kint) * damping
-        p4int = loginterp(k, p4k)(kint) * damping
+                p0int = loginterp(k, p0k)(kint) * damping
+                p2int = loginterp(k, p2k)(kint) * damping
+                p4int = loginterp(k, p4k)(kint) * damping
+                
+            else :
 
-        r,xi0 = hankl.P2xi(kint, p0int, l=0, lowring=True)
-        r,xi2 = hankl.P2xi(kint, p2int, l=2, lowring=True)
-        r,xi4 = hankl.P2xi(kint, p4int, l=4, lowring=True)   
-        
-        pk_mult = [p0k,p2k,p4k]
-        xi_mult = [xi0.real,xi2.real,xi4.real]
+                p0int = p0k * np.exp(-(k/damp)**2)
+                p2int = p2k * np.exp(-(k/damp)**2)
+                p4int = p4k * np.exp(-(k/damp)**2)
+                kint = k
+            
+            if pktoxi == 'hankl' :
+
+                r,xi0 = hankl.P2xi(kint, p0int, l=0, lowring=True)
+                r,xi2 = hankl.P2xi(kint, p2int, l=2, lowring=True)
+                r,xi4 = hankl.P2xi(kint, p4int, l=4, lowring=True)
+                xi0,xi2,xi4 = xi0.real,xi2.real,xi4.real
+            
+            if pktoxi == 'sphr' :
+                r, xi0 = self.sphr.sph(0,p0int)
+                r2, xi2 = self.sphr.sph(2,p2int); xi2 *= -1
+                r4, xi4 = self.sphr.sph(4,p4int)   
+            
+            
+        else : 
+            
+            kmax_cutoff = damp
+            w = k >kmax_cutoff         
+            damping = np.exp( - (k[w]/kmax_cutoff-1)**2)
+            
+            p0k[w]*=damping
+            p2k[w]*=damping
+            p4k[w]*=damping
+            
+            if logint == True:
+
+                p0int = loginterp(k, p0k)(kint)
+                p2int = loginterp(k, p2k)(kint) 
+                p4int = loginterp(k, p4k)(kint)
+                
+            else :
+
+                p0int = p0k 
+                p2int = p2k 
+                p4int = p4k
+                kint = k
+                
+            if pktoxi == 'hankl' :
+
+                r,xi0 = hankl.P2xi(kint, p0int, l=0, lowring=True)
+                r,xi2 = hankl.P2xi(kint, p2int, l=2, lowring=True)
+                r,xi4 = hankl.P2xi(kint, p4int, l=4, lowring=True)
+                xi0,xi2,xi4 = xi0.real,xi2.real,xi4.real
+            
+            if pktoxi == 'sphr' :
+                r, xi0 = self.sphr.sph(0,p0int)
+                r2, xi2 = self.sphr.sph(2,p2int); xi2 *= -1
+                r4, xi4 = self.sphr.sph(4,p4int)    
+                
+            
+
+        if not win is None:
+            pole = np.array([p0k,p2k,p4k], dtype='f8')
+            poles=[]
+            p0k += shot_noise
+            for i in range(3):
+                poles.append(np.interp(win.xin[0],k, pole[i,:]))
+            cpoles = win.dot(poles, unpack=True)
+            cpoles[0] -= shot_noise
+            pk_mult=[cpoles[0],cpoles[1],cpoles[2]]
+
+        else : 
+            pk_mult = [p0k,p2k,p4k]
+
+        xi_mult = [xi0,xi2,xi4]
         ell = np.arange(0, ell_max+2, 2)
         
         
         #-- Multipole quantities
         self.r = r
-        self.k = k
+        self.r_test = r
+
+        if not win is None:
+            self.k = win.xout[0]
+        else :
+            self.k = k  
         self.ell = ell
         self.pk_mult = pk_mult
         self.xi_mult = xi_mult
-
-
-                 
-class RSD_ME_ext(Model):
-    
+        
+        if not self.window_mult is None:
+            self.get_multipoles_window()
+            pk = self.pk_mult_convol
+            pk_convol = np.zeros_like(pk_mult)
+            for i in range(ell.size): 
+                pk_convol[i]=loginterp(kint, pk[i])(k)
+            self.pk_mult_convol = pk_convol
+            
+class Joint_RSD_ME_red(Model):
     ''' 
     Implements of Moment Extansion model (Chen, Vlah & White (2020), https://arxiv.org/abs/2005.00523)
     using velocileptors : https://github.com/sfschen/velocileptors
     '''
-                                                             
-    def __init__(self, 
-        pk_lin_file=None, theory = None): 
+    def __init__(self, pk_lin_file=None, theory = None, hexa = False, 
+                 local_bias = False,same_fog = False, damp_term = True, damp = 100, pktoxi='hankl',
+                 logint = True,kmin = 5e-3, kmax = 1,nk = 100,
+                 extrap_min = -5, extrap_max = 3, N = 2000):
+        
+        
         super().__init__()
+        
         k1,pk_lin=np.loadtxt(pk_lin_file).T
         
         if theory == 'LPT':
@@ -1069,11 +1275,264 @@ class RSD_ME_ext(Model):
         
         moments = MomentExpansion(
                                 k1,  pk_lin, beyond_gauss = False, 
-                                one_loop= True,kmin = 5e-4, kmax = 0.4, 
-                                nk = 500, cutoff=2, extrap_min = -4, extrap_max = 3, 
-                                N = 2000, threads=1, jn=5, shear=True
+                                one_loop= True,kmin = kmin, kmax = kmax, 
+                                nk = nk, cutoff=2, extrap_min = extrap_min, extrap_max = extrap_max, 
+                                N = N, threads=1, jn=5, shear=True
                                 )
         
+        #moments = MomentExpansion(
+        #                k1,  pk_lin, beyond_gauss = False, 
+        #                one_loop= True,kmin = 5e-4, kmax = 0.4, 
+        #                nk = len(k1), cutoff=2, extrap_min = -4, extrap_max = 3, 
+        #                N = 2000, threads=1, jn=5, shear=True
+        #                )
+        #
+        self.logint = logint
+        self.pktoxi = pktoxi
+        self.local_bias = local_bias
+        self.damp = damp
+        self.damp_term = damp_term
+        self.hexa = hexa
+        self.k1 = k1
+        self.pk_lin = pk_lin
+        self.window_mult = None
+        self.moments=moments
+        self.same_fog = same_fog
+        
+        self.kint = np.logspace(extrap_min,extrap_max,N)
+        self.sphr = SphericalBesselTransform(self.kint,L=5,fourier=True)
+        
+    def get_pk_2d(self, pars, ell_max=4):
+        ''' 
+        Input
+        -----
+        pars (dict): available parameters are:
+
+        '''
+        
+        logint=self.logint
+        pktoxi = self.pktoxi
+        sphr = self.sphr
+        kint = self.kint
+        same_fog = self.same_fog
+        damp_term = self.damp_term
+        damp = self.damp
+        hexa = self.hexa
+        local_bias = self.local_bias
+        k1 = self.k1
+        pk_lin = self.pk_lin
+        moments=self.moments
+        
+        b1 = pars['b1'] if 'b1' in pars else 0
+        b2 = pars['b2'] if 'b2' in pars else 0
+        
+        b1_CS = pars['b1_CS'] if 'b1_CS' in pars else b1
+        b2_CS = pars['b2_CS'] if 'b2_CS' in pars else b2
+
+
+        if local_bias == False : 
+            bs = pars['bs'] if 'bs' in pars else 0 
+            b3 = pars['b3'] if 'b3' in pars else 0
+        else : 
+            bs = pars['bs'] if 'bs' in pars else -4/7*(b1-1) 
+            b3 = pars['b3'] if 'b3' in pars else 32/315 * (b1-1)
+        
+        bs_CS = pars['bs_CS'] if 'bs_CS' in pars else bs 
+        b3_CS = pars['b3_CS'] if 'b3_CS' in pars else b3
+            
+        alpha0 = pars['alpha0'] if 'alpha0' in pars else 0
+        alpha2 = pars['alpha2'] if 'alpha2' in pars else 0
+        alpha4 = pars['alpha4'] if 'alpha4' in pars else 0
+        
+        alpha0_CS = pars['alpha0_CS'] if 'alpha0_CS' in pars else alpha0
+        alpha2_CS = pars['alpha2_CS'] if 'alpha2_CS' in pars else alpha2
+        alpha4_CS = pars['alpha4_CS'] if 'alpha4_CS' in pars else alpha4
+        
+        
+        sn = pars['sn'] if 'sn' in pars else 0
+        sn2 = pars['sn2']if 'sn2' in pars else 0
+        f = pars['f']  if 'f' in pars else 0
+        aper = pars['aper'] if 'aper' in pars else 1
+        apar = pars['apar'] if 'apar' in pars else 1
+
+        
+        
+        k = moments.kv
+        nk=len(k)
+        nus, ws = np.polynomial.legendre.leggauss(2*5)
+        nus_calc = nus[0:5]
+        
+        L0 = np.polynomial.legendre.Legendre((1))(nus)
+        L2 = np.polynomial.legendre.Legendre((0,0,1))(nus)
+        L4 = np.polynomial.legendre.Legendre((0,0,0,0,1))(nus)
+        
+        pknu = np.zeros((len(nus),nk))
+        
+        #-- Fourier Space Model
+        
+        param = [b1, b2, bs, b3, alpha0, alpha2, alpha4,sn,sn2]
+        
+        for j, nu in enumerate(nus_calc):
+
+            if 'sigma_fog' in pars and pars['sigma_fog'] != 0:
+                fog = 1./( 1 + 0.5*(nu*k*pars['sigma_fog'])**2)**2
+            else : 
+                fog=1
+                
+            pknu[j,:] = fog*moments.compute_redshift_space_power_at_mu(param,f,nu,reduced=True,counterterm_c3=0,apar=apar,aperp=aper)[1]
+            
+        pknu[5:,:] = np.flip(pknu[0:5],axis=0)
+               
+        p0k = 0.5 * np.sum((ws*L0)[:,None]*pknu,axis=0)
+        p2k = 2.5 * np.sum((ws*L2)[:,None]*pknu,axis=0)
+        p4k = 4.5 * np.sum((ws*L4)[:,None]*pknu,axis=0)
+        
+        if hexa == False:
+            pk_mult = [p0k,p2k,p4k]
+        else : 
+            m = MeshFFTWindow.load('/global/cfs/cdirs/desi/users/adematti/desi_mock_challenge/FirstGenMocks/AbacusSummit/CubicBox/ELG/z1.100/window_nmesh512_los-x.npy').poles
+            factorout = 5
+            shot_noise = 998
+            m.slice_x(sliceout=slice(0, len(m.xout[0]) // factorout * factorout, factorout))
+            m.select_x(xinlim=(0., 0.35),xoutlim=(0., 0.3))
+            p0k += shot_noise
+            pole = np.array([p0k,p2k,p4k], dtype='f8')
+            poles=[]
+            for i in range(3):
+                poles.append(np.interp(m.xin[0],k, pole[i,:]))
+            cpoles = m.dot(poles, unpack=True)
+            cpoles[0] -= shot_noise
+            pk_mult=[cpoles[0],cpoles[1],cpoles[2]]
+            
+        #-- Configuration Space Model
+        
+        param = [b1_CS, b2_CS, bs_CS, b3_CS, alpha0_CS, alpha2_CS, alpha4_CS,0,0] #sn and sn2 fixed to 0 in CS
+        
+        for j, nu in enumerate(nus_calc):
+            if same_fog == False:
+                if 'sigma_fog_CS' in pars and pars['sigma_fog_CS'] != 0:
+                    fog_CS = 1./( 1 + 0.5*(nu*k*pars['sigma_fog_CS'])**2)**2
+                else : 
+                    fog_CS = 1
+            else :
+                fog_CS = 1./( 1 + 0.5*(nu*k*pars['sigma_fog'])**2)**2
+                
+            pknu[j,:] = fog_CS*moments.compute_redshift_space_power_at_mu(param,f,nu,reduced=True,counterterm_c3=0,apar=apar,aperp=aper)[1]
+
+        pknu[5:,:] = np.flip(pknu[0:5],axis=0)
+               
+        p0k = 0.5 * np.sum((ws*L0)[:,None]*pknu,axis=0)
+        p2k = 2.5 * np.sum((ws*L2)[:,None]*pknu,axis=0)
+        p4k = 4.5 * np.sum((ws*L4)[:,None]*pknu,axis=0)
+        
+        
+        if damp_term == True :
+            
+            damping = np.exp(-(kint/damp)**2)
+            
+            if logint == True:
+
+                p0int = loginterp(k, p0k)(kint) * damping
+                p2int = loginterp(k, p2k)(kint) * damping
+                p4int = loginterp(k, p4k)(kint) * damping
+                
+            else :
+
+                p0int = p0k * np.exp(-(k/damp)**2)
+                p2int = p2k * np.exp(-(k/damp)**2)
+                p4int = p4k * np.exp(-(k/damp)**2)
+                kint = k
+            
+            if pktoxi == 'hankl' :
+
+                r,xi0 = hankl.P2xi(kint, p0int, l=0, lowring=True)
+                r,xi2 = hankl.P2xi(kint, p2int, l=2, lowring=True)
+                r,xi4 = hankl.P2xi(kint, p4int, l=4, lowring=True)
+                xi0,xi2,xi4 = xi0.real,xi2.real,xi4.real
+            
+            if pktoxi == 'sphr' :
+                r, xi0 = self.sphr.sph(0,p0int)
+                r2, xi2 = self.sphr.sph(2,p2int); xi2 *= -1
+                r4, xi4 = self.sphr.sph(4,p4int)   
+            
+            
+        else : 
+            
+            kmax_cutoff = damp
+            w = k >kmax_cutoff         
+            damping = np.exp( - (k[w]/kmax_cutoff-1)**2)
+            
+            p0k[w]*=damping
+            p2k[w]*=damping
+            p4k[w]*=damping
+            
+            if logint == True:
+
+                p0int = loginterp(k, p0k)(kint)
+                p2int = loginterp(k, p2k)(kint) 
+                p4int = loginterp(k, p4k)(kint)
+                
+            else :
+
+                p0int = p0k 
+                p2int = p2k 
+                p4int = p4k
+                kint = k
+                
+            if pktoxi == 'hankl' :
+
+                r,xi0 = hankl.P2xi(kint, p0int, l=0, lowring=True)
+                r,xi2 = hankl.P2xi(kint, p2int, l=2, lowring=True)
+                r,xi4 = hankl.P2xi(kint, p4int, l=4, lowring=True)
+                xi0,xi2,xi4 = xi0.real,xi2.real,xi4.real
+            
+            if pktoxi == 'sphr' :
+                r, xi0 = self.sphr.sph(0,p0int)
+                r2, xi2 = self.sphr.sph(2,p2int); xi2 *= -1
+                r4, xi4 = self.sphr.sph(4,p4int)   
+        
+        xi_mult = [xi0,xi2,xi4]
+        ell = np.arange(0, ell_max+2, 2)
+        
+        
+        #-- Multipole quantities
+        self.r = r
+        if hexa == False:
+            self.k = k
+        else : 
+            self.k = m.xout[0]
+        self.ell = ell
+        self.pk_mult = pk_mult
+        self.xi_mult = xi_mult
+        
+class RSD_ME_ext(Model):
+    
+    ''' 
+    Implements of Moment Extansion model (Chen, Vlah & White (2020), https://arxiv.org/abs/2005.00523)
+    using velocileptors : https://github.com/sfschen/velocileptors
+    '''
+                                                             
+    def __init__(self, 
+        pk_lin_file=None, theory = None, hexa = False, local_bias = False): 
+        super().__init__()
+        k1,pk_lin=np.loadtxt(pk_lin_file).T
+        
+        if theory == 'LPT':
+            from velocileptors.LPT.moment_expansion_fftw import MomentExpansion
+        if theory == 'EPT':
+            from velocileptors.EPT.moment_expansion_fftw import MomentExpansion
+               
+
+        mome = MomentExpansion(k1,pk_lin)
+        
+        moments = MomentExpansion(
+                                k1,  pk_lin, beyond_gauss = False, 
+                                one_loop= True,kmin = 5e-3, kmax = 0.4, 
+                                nk = len(k1), cutoff=2, extrap_min = -5, extrap_max = 3, 
+                                N = 2000, threads=1, jn=5, shear=True
+                                )
+        self.hexa=hexa
+        self.local_bias = False
         self.k1 = k1
         self.pk_lin = pk_lin
         self.window_mult = None
@@ -1086,14 +1545,22 @@ class RSD_ME_ext(Model):
         pars (dict): available parameters are:
 
         '''
+        local_bias = self.local_bias
+        hexa=self.hexa
         k1 = self.k1
         pk_lin = self.pk_lin
         moments=self.moments
         
         b1 = pars['b1'] if 'b1' in pars else 0
         b2 = pars['b2'] if 'b2' in pars else 0
-        bs = pars['bs'] if 'bs' in pars else 0 
-        b3 = pars['b3'] if 'b3' in pars else 0
+        
+        if local_bias == False : 
+            bs = pars['bs'] if 'bs' in pars else 0 
+            b3 = pars['b3'] if 'b3' in pars else 0
+        else : 
+            bs = pars['bs'] if 'bs' in pars else -4/7*(b1-1) 
+            b3 = pars['b3'] if 'b3' in pars else 32/315 * (b1-1)
+            
         alpha = pars['alpha'] if 'alpha' in pars else 0
         alpha_v = pars['alpha_v'] if 'alpha_v' in pars else 0
         alpha_s0 = pars['alpha_s0'] if 'alpha_s0' in pars else 0
@@ -1102,14 +1569,14 @@ class RSD_ME_ext(Model):
         sv = pars['sv'] if 'sv' in pars else 0
         s0 = pars['s0'] if 's0' in pars else 0
         c3 = pars['c3'] if 'c3' in pars else 0
-        f = pars['f']
-        beta = f/b1     
+        f = pars['f']   
         aper = pars['aper']
         apar = pars['apar']
 
         param = [b1, b2, bs, b3, alpha, alpha_v, alpha_s0, alpha_s2, sn, sv, s0]
         
         k = moments.kv
+        
         nus, ws = np.polynomial.legendre.leggauss(2*10)
         nus_calc = nus[0:10]
         
@@ -1117,7 +1584,7 @@ class RSD_ME_ext(Model):
         L2 = np.polynomial.legendre.Legendre((0,0,1))(nus)
         L4 = np.polynomial.legendre.Legendre((0,0,0,0,1))(nus)
         
-        nk = 500
+        nk=len(k)
         pknu = np.zeros((len(nus),nk))
 
         for j, nu in enumerate(nus_calc):
@@ -1132,34 +1599,303 @@ class RSD_ME_ext(Model):
         pknu[10:,:] = np.flip(pknu[0:10],axis=0)
         
         
+        #kmax_cutoff = 10
+        #w = k >kmax_cutoff    
         
-        
+        #damping = np.exp( - (k[w]/kmax_cutoff-1)**2)   
         
         p0k = 0.5 * np.sum((ws*L0)[:,None]*pknu,axis=0)
         p2k = 2.5 * np.sum((ws*L2)[:,None]*pknu,axis=0)
         p4k = 4.5 * np.sum((ws*L4)[:,None]*pknu,axis=0)
+        #p0k[w]*=damping
+        #p2k[w]*=damping
+        #p4k[w]*=damping
         
-            
-        
-        kint = np.logspace(-5,3,1024)
+        kint = np.logspace(-5,3,2000)
         damping = np.exp(-(kint/10)**2)
 
         p0int = loginterp(k, p0k)(kint) * damping
         p2int = loginterp(k, p2k)(kint) * damping
         p4int = loginterp(k, p4k)(kint) * damping
 
-        r,xi0 = hankl.P2xi(kint, p0int, l=0, lowring=True)
-        r,xi2 = hankl.P2xi(kint, p2int, l=2, lowring=True)
-        r,xi4 = hankl.P2xi(kint, p4int, l=4, lowring=True)   
+        r0,xi0 = hankl.P2xi(kint, p0int, l=0, lowring=True)
+        r2,xi2 = hankl.P2xi(kint, p2int, l=2, lowring=True)
+        r4,xi4 = hankl.P2xi(kint, p4int, l=4, lowring=True)   
         
-        pk_mult = [p0k,p2k,p4k]
+        if hexa == False:
+            pk_mult = [p0k,p2k,p4k]
+        else : 
+            m = MeshFFTWindow.load('/global/cfs/cdirs/desi/users/adematti/desi_mock_challenge/FirstGenMocks/AbacusSummit/CubicBox/ELG/z1.100/window_nmesh512_los-x.npy').poles
+            factorout = 5
+            shot_noise = 998
+            m.slice_x(sliceout=slice(0, len(m.xout[0]) // factorout * factorout, factorout))
+            m.select_x(xoutlim=(0., 0.4))
+            p0k += shot_noise
+            poles = np.array([p0k,p2k,p4k], dtype='f8')
+            for i in range(3):
+                poles[i,:] = np.interp(k1,k, poles[i,:])
+            cpoles = m.dot(poles, unpack=True)
+            cpoles[0] -= shot_noise
+            pk_mult=[cpoles[0],cpoles[1],cpoles[2]]
+            
+          
+            
+            
         xi_mult = [xi0.real,xi2.real,xi4.real]
         
         ell = np.arange(0, ell_max+2, 2)        
 
         #-- Multipole quantities
-        self.r = r
-        self.k = k
+        self.r = r0
+        if hexa == False:
+            self.k = k
+        else : 
+            self.k = m.xout[0]
         self.ell = ell
         self.pk_mult = pk_mult
         self.xi_mult = xi_mult
+
+
+
+class Joint_RSD_ME_ext(Model):
+    
+    ''' 
+    Implements of Moment Extansion model (Chen, Vlah & White (2020), https://arxiv.org/abs/2005.00523)
+    using velocileptors : https://github.com/sfschen/velocileptors
+    '''
+                                                             
+    def __init__(self, 
+        pk_lin_file=None, theory = None,hexa = False):  
+        super().__init__()
+        k1,pk_lin=np.loadtxt(pk_lin_file).T
+        
+        if theory == 'LPT':
+            from velocileptors.LPT.moment_expansion_fftw import MomentExpansion
+        if theory == 'EPT':
+            from velocileptors.EPT.moment_expansion_fftw import MomentExpansion
+            
+
+        mome = MomentExpansion(k1,pk_lin)
+        
+        moments = MomentExpansion(
+                                k1,  pk_lin, beyond_gauss = False, 
+                                one_loop= True,kmin = 5e-3, kmax = 0.4, 
+                                nk = len(k1), cutoff=2, extrap_min = -5, extrap_max = 3, 
+                                N = 2000, threads=1, jn=5, shear=True
+                                )
+        
+        self.hexa=hexa
+        self.k1 = k1
+        self.pk_lin = pk_lin
+        self.window_mult = None
+        self.moments=moments
+
+    def get_pk_2d(self, pars, ell_max=4):
+        ''' 
+        Input
+        -----
+        pars (dict): available parameters are:
+
+        '''
+        k1 = self.k1
+        pk_lin = self.pk_lin
+        moments=self.moments
+        hexa=self.hexa
+        
+        b1_FS = pars['b1_FS'] if 'b1_FS' in pars else 0
+        b2_FS = pars['b2_FS'] if 'b2_FS' in pars else 0
+        bs_FS = pars['bs_FS'] if 'bs_FS' in pars else 0 
+        b3_FS = pars['b3_FS'] if 'b3_FS' in pars else 0
+        
+        b1_CS = pars['b1_CS'] if 'b1_CS' in pars else 0
+        b2_CS = pars['b2_CS'] if 'b2_CS' in pars else 0
+        bs_CS = pars['bs_CS'] if 'bs_CS' in pars else 0 
+        b3_CS = pars['b3_CS'] if 'b3_CS' in pars else 0
+        
+        alpha = pars['alpha'] if 'alpha' in pars else 0
+        alpha_v = pars['alpha_v'] if 'alpha_v' in pars else 0
+        alpha_s0 = pars['alpha_s0'] if 'alpha_s0' in pars else 0
+        alpha_s2 = pars['alpha_s2'] if 'alpha_s2' in pars else 0
+        
+        sn = pars['sn'] if 'sn' in pars else 0
+        sv = pars['sv'] if 'sv' in pars else 0
+        s0 = pars['s0'] if 's0' in pars else 0
+        c3 = pars['c3'] if 'c3' in pars else 0
+        
+        f = pars['f']     
+        aper = pars['aper']
+        apar = pars['apar']
+
+        
+        
+        k = moments.kv
+        nus, ws = np.polynomial.legendre.leggauss(2*10)
+        nus_calc = nus[0:10]
+        
+        L0 = np.polynomial.legendre.Legendre((1))(nus)
+        L2 = np.polynomial.legendre.Legendre((0,0,1))(nus)
+        L4 = np.polynomial.legendre.Legendre((0,0,0,0,1))(nus)
+        
+        nk=len(k)
+        pknu = np.zeros((len(nus),nk))
+        
+#-- Fourier Space Model
+        
+        param = [b1_FS, b2_FS, bs_FS, b3_FS, alpha, alpha_v, alpha_s0, alpha_s2, sn, sv, s0]
+        
+        for j, nu in enumerate(nus_calc):
+
+            if 'sigma_fog_FS' in pars and pars['sigma_fog_FS'] != 0:
+                fog = 1./( 1 + 0.5*(nu*k*pars['sigma_fog_FS'])**2)**2
+            else : 
+                fog=1
+                
+            pknu[j,:] = fog*moments.compute_redshift_space_power_at_mu(param,f,nu,reduced=False,counterterm_c3=c3,apar=apar,aperp=aper)[1]
+            
+        pknu[10:,:] = np.flip(pknu[0:10],axis=0)
+        
+        p0k = 0.5 * np.sum((ws*L0)[:,None]*pknu,axis=0)
+        p2k = 2.5 * np.sum((ws*L2)[:,None]*pknu,axis=0)
+        p4k = 4.5 * np.sum((ws*L4)[:,None]*pknu,axis=0)
+        
+        kint = np.logspace(-5,3,1024)
+        damping = np.exp(-(moments.kint/10)**2)
+        
+        if hexa == False:
+            pk_mult = [p0k,p2k,p4k]
+        else : 
+            m = MeshFFTWindow.load('/global/cfs/cdirs/desi/users/adematti/desi_mock_challenge/FirstGenMocks/AbacusSummit/CubicBox/ELG/z1.100/window_nmesh512_los-x.npy').poles
+            factorout = 5
+            shot_noise = 998
+            m.slice_x(sliceout=slice(0, len(m.xout[0]) // factorout * factorout, factorout))
+            m.select_x(xoutlim=(0., 0.4))
+            p0k += shot_noise
+            poles = np.array([p0k,p2k,p4k], dtype='f8')
+            for i in range(3):
+                poles[i,:] = np.interp(k1,k, poles[i,:])
+            cpoles = m.dot(poles, unpack=True)
+            cpoles[0] -= shot_noise
+            pk_mult=[cpoles[0],cpoles[1],cpoles[2]]
+        
+        
+#-- Configuration Space Model
+        
+        param = [b1_CS, b2_CS, bs_CS, b3_CS, alpha, alpha_v, alpha_s0, alpha_s2, sn, sv, s0]
+        for j, nu in enumerate(nus_calc):
+
+            if 'sigma_fog_CS' in pars and pars['sigma_fog_CS'] != 0:
+                fog = 1./( 1 + 0.5*(nu*k*pars['sigma_fog_CS'])**2)**2
+            else : 
+                fog=1
+                
+            pknu[j,:] = fog*moments.compute_redshift_space_power_at_mu(param,f,nu,reduced=False,counterterm_c3=c3,apar=apar,aperp=aper)[1]
+            
+        pknu[10:,:] = np.flip(pknu[0:10],axis=0)
+        
+        p0k = 0.5 * np.sum((ws*L0)[:,None]*pknu,axis=0)
+        p2k = 2.5 * np.sum((ws*L2)[:,None]*pknu,axis=0)
+        p4k = 4.5 * np.sum((ws*L4)[:,None]*pknu,axis=0)
+       
+        kint = np.logspace(-5,3,1024)
+        damping = np.exp(-(moments.kint/10)**2)
+
+        p0int = loginterp(k, p0k)(moments.kint) * damping
+        p2int = loginterp(k, p2k)(moments.kint) * damping
+        p4int = loginterp(k, p4k)(moments.kint) * damping
+
+        r0,xi0 = hankl.P2xi(moments.kint, p0int, l=0, lowring=True)
+        r2,xi2 = hankl.P2xi(moments.kint, p2int, l=2, lowring=True)
+        r4,xi4 = hankl.P2xi(moments.kint, p4int, l=4, lowring=True)   
+        
+        xi_mult = [xi0.real,xi2.real,xi4.real]
+        
+        ell = np.arange(0, ell_max+2, 2)        
+
+        
+#-- Multipole quantities
+        self.r = r0
+        if hexa == False:
+            self.k = k
+        else : 
+            self.k = m.xout[0]
+        self.ell = ell
+        self.pk_mult = pk_mult
+        self.xi_mult = xi_mult
+
+import time
+
+class LPT_rsd(Model):
+
+    def __init__(self, plin_file=None,kIR=None): 
+        super().__init__()
+        
+        #start= time.time()
+        
+        klin,plin=np.loadtxt(plin_file).T
+        
+        lpt = LPT_RSD(klin,plin,kIR = kIR)
+        
+        self.lpt = lpt
+        
+        #print("Elapsed time 1: ",time.time()-start," seconds.")
+        
+        
+    def get_pk_2d(self, pars, ell_max=4):
+        
+        lpt = self.lpt
+  
+        b1 = pars['b1'] if 'b1' in pars else 0
+        b2 = pars['b2'] if 'b2' in pars else 0
+        bs = pars['bs'] if 'bs' in pars else 0 
+        b3 = pars['b3'] if 'b3' in pars else 0
+        alpha0 = pars['alpha0'] if 'alpha0' in pars else 0
+        alpha2 = pars['alpha2'] if 'alpha2' in pars else 0
+        alpha4 = pars['alpha4'] if 'alpha4' in pars else 0
+        alpha6 = pars['alpha6'] if 'alpha6' in pars else 0
+        sn0 = pars['sn0'] if 'sn0' in pars else 0
+        sn2 = pars['sn2'] if 'sn2' in pars else 0
+        sn4 = pars['sn4'] if 'sn4' in pars else 0
+        f = pars['f']   
+        aper = pars['aper']
+        apar = pars['apar']
+        
+        params = [b1, b2, bs, b3, alpha0, alpha2, alpha4, alpha6, sn0, sn2, sn4]
+        
+        #start= time.time()
+        lpt.make_pltable(f,nmax=4,apar=apar,aperp=aper,kmin = 0.02, kmax = 0.4)
+        #print("Elapsed time 2: ",time.time()-start," seconds.")
+        
+        #start= time.time()
+        k,p0k,p2k,p4k = lpt.combine_bias_terms_pkell(params)
+        #print("Elapsed time 3: ",time.time()-start," seconds.")
+        
+        pk_mult = [p0k,p2k,p4k]
+
+        
+
+        #start= time.time()
+        kint = np.logspace(-5,3,2000)
+        damping = np.exp(-(kint/10)**2)
+
+        p0int = loginterp(k, p0k)(kint) * damping
+        p2int = loginterp(k, p2k)(kint) * damping
+        p4int = loginterp(k, p4k)(kint) * damping
+
+        r0,xi0 = hankl.P2xi(kint, p0int, l=0, lowring=True)
+        r2,xi2 = hankl.P2xi(kint, p2int, l=2, lowring=True)
+        r4,xi4 = hankl.P2xi(kint, p4int, l=4, lowring=True)   
+        #print("Elapsed time 4: ",time.time()-start," seconds.")
+
+        xi_mult = [xi0.real,xi2.real,xi4.real]
+
+        ell = np.arange(0, ell_max+2, 2) 
+        
+        
+        
+        self.ell = ell
+        self.pk_mult = pk_mult
+        self.xi_mult = xi_mult
+        self.k = k
+        self.r = r0
+        
+  
