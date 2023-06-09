@@ -6,12 +6,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 import hankl
 import time
-
 import scipy.interpolate 
 import scipy.linalg
 import scipy.optimize
 import scipy.interpolate
-
 from iminuit import Minuit
 from iminuit.cost import LeastSquares
 from velocileptors.Utils.spherical_bessel_transform import SphericalBesselTransform
