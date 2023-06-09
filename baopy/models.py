@@ -5,6 +5,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import hankl
+import time
 
 import scipy.interpolate 
 import scipy.linalg
@@ -1821,8 +1822,6 @@ class Joint_RSD_ME_ext(Model):
         self.ell = ell
         self.pk_mult = pk_mult
         self.xi_mult = xi_mult
-
-import time
 
 class LPT_rsd(Model):
 
