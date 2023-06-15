@@ -10,41 +10,21 @@ import scipy.interpolate
 import scipy.linalg
 import scipy.optimize
 import scipy.interpolate
+from scipy.special import legendre
 
-from iminuit import Minuit
-from iminuit.cost import LeastSquares
-
-
-def legendre(ell, mu):
-    ''' Legendre polynomials 
-        
-    '''
-    
-    if ell == 0:
-        return mu*0+1
-    elif ell == 2:
-        return 0.5 * (3*mu**2-1)
-    elif ell == 4:
-        return 1/8 * (35*mu**4 - 30*mu**2 +3)
-    elif ell == 6:
-        return 1/16 * (231*mu**6 - 315*mu**4 + 105*mu**2 - 5)
-    elif ell == 8:
-        return 1/128* (6435*mu**8 - 12012*mu**6 + 6930*mu**4 - 1260*mu**2 + 35)
-    else:
-        return -1
-
-def multipoles(x, ell_max=8):
+def multipoles(x, ell_max=8, symmetric=True):
     ''' Get multipoles of any function of ell
-        It assumes symmetry around mu=0. 
         Uses ``numpy.trapz()`` to integrate over mu.  
         
         Parameters
         ----------
         x : np.array with shape (nmu, nx) 
-            Function from which the multipoles will be computed    
+            Function from which the multipoles will be computed
         ell_max : int 
             Maximum multipole order to compute. Currently only supports even multipoles 
-
+        symmetric : bool 
+            True if x is defined for 0 <= mu <= 1, when x is a pair function
+            
         Returns
         -------
         x_mult : np.array with shape (nell, nx)
@@ -57,11 +37,15 @@ def multipoles(x, ell_max=8):
     n_ell = ell_max//2+1
     x_mult = np.zeros((n_ell, n_x))
     ell = np.arange(0, ell_max+2, 2)
-    mu = np.linspace(0, 1, n_mu)
+    mu_min = 0 if symmetric else -1
+    mu = np.linspace(mu_min, 1, n_mu)
+
     for i in range(n_ell):
-        leg = legendre(ell[i], mu)
+        leg = legendre(ell[i])(mu)
         x_mult[i] = np.trapz(x*leg[:, None], x=mu, axis=0)
         x_mult[i] *= (2*ell[i]+1)
+        if not symmetric: 
+            x_mult[i] /= 2
     return x_mult
 
 
@@ -147,7 +131,7 @@ class Model:
             Maximum order of multipoles to be plotted 
         k_range : tuple
             Range of wavenumbers in h/Mpc to be plotted 
-        r_range : tuplt
+        r_range : tuple
             Range of separations in Mpc/h to be plotted 
         power_k : int
             Scales the plotted power spectra by ``k**power_k``
@@ -369,6 +353,8 @@ class BAO(Model):
             xi_sm : array 
                 Isotropic correlation function without BAO peak 
         """
+        from iminuit import Minuit
+        from iminuit.cost import LeastSquares
         
         def broadband_spl(r1, r2, s, r_min, r_max):
             """ Implements the fit for the no-peak correlation function using splines
@@ -538,8 +524,8 @@ class BAO(Model):
         plt.tight_layout()
         plt.show()
 
-    def get_pk_2d(self, pars, ell_max=4, no_peak=False, decouple_peak=True):
-        ''' Compute P(k, mu) for a set of parameters
+    def get_pk_2d(self, pars, ell_max=4, no_peak=False, decouple_peak=True, n_mu=101, mu_symmetric=True):
+        ''' Compute P(k, mu) for a set of parameters and its multipoles in Fourier and Configuration Space
         
         Parameters
         ----------
@@ -599,7 +585,8 @@ class BAO(Model):
         #-- Defining 2D arrays for mu and k 
         #-- These have shape = (nmu, nk) 
         if self.mu is None:
-            mu = np.linspace(0, 1, 101)
+            mu_min = 0 if mu_symmetric is True else -1
+            mu = np.linspace(mu_min, 1, n_mu)
             mu_2d = np.tile(mu, (k.size, 1)).T
             k_2d = np.tile(k, (mu.size, 1))
         else:
@@ -652,6 +639,22 @@ class BAO(Model):
             beam = np.exp( - 0.5*pars['beam']**2*np.outer(1-mu**2, k**2)) 
         else:
             beam = 1.
+
+        #- Lyman-alpha damping function from Arinyo-y-Prats et al. 2015
+        if 'q_1' in pars:
+            cutoff = 10.
+            damp = np.ones_like(k)
+            w = k>cutoff 
+            damp[w] *= np.exp( - 0.5*(k[w]-cutoff)**2/cutoff**2)
+
+            delta = k**3*pk_nopeak/(2*np.pi**2)
+            jeans = np.exp(-k**2/pars['k_p']**2)
+            term_a = (pars['q_1']*delta**2 + pars['q_2']*delta**4) * damp
+            #term_b = np.outer(mu**pars['b_v'], (1- (k/pars['k_v'])**pars['a_v']))
+            term_b = 1 - np.outer(mu**pars['b_v'], k**pars['a_v']/pars['k_v'])
+            damp = np.exp( term_a*term_b)*jeans
+        else:
+            damp=1.
         
         #-- Kaiser redshift-space distortions
         kaiser = (bias  * (1 + beta *amu_2d**2*recon_damp) * 
@@ -662,9 +665,10 @@ class BAO(Model):
         pk_2d *= kaiser
         pk_2d *= fog**2 
         pk_2d *= beam
+        pk_2d *= damp 
 
         #-- Multipoles of pk
-        pk_mult = multipoles(pk_2d, ell_max=ell_max)
+        pk_mult = multipoles(pk_2d, ell_max=ell_max, symmetric=mu_symmetric)
         
         #-- Multipoles of xi
         ell = np.arange(0, ell_max+2, 2)
@@ -783,7 +787,7 @@ class RSD_TNS(Model):
         plt.legend(leg)
         plt.title('RSD B terms')
 
-    def get_pk_2d(self, pars, ell_max=4):
+    def get_pk_2d(self, pars, ell_max=4, n_mu=201, mu_symmetric=True):
         ''' Compute P(k, mu)  eq. (2.198) of De Mattia Thesis 
         Input
         -----
@@ -819,7 +823,8 @@ class RSD_TNS(Model):
         #-- Defining 2D arrays for mu and k 
         #-- These have shape = (nmu, nk) 
         if self.mu is None:
-            mu = np.linspace(0, 1, 201)
+            mu_min = 0 if mu_symmetric is True else -1
+            mu = np.linspace(mu_min, 1, n_mu)
             mu_2d = np.tile(mu, (k.size, 1)).T
             k_2d = np.tile(k, (mu.size, 1))
         else:
@@ -900,7 +905,7 @@ class RSD_TNS(Model):
 
         
         #-- Multipoles of pk
-        pk_mult = multipoles(pk_rsd, ell_max=ell_max)
+        pk_mult = multipoles(pk_rsd, ell_max=ell_max, symmetric=mu_symmetric)
 
         #-- Multipoles of xi
         ell = np.arange(0, ell_max+2, 2)
@@ -944,27 +949,28 @@ class RSD_ME_red(Model):
     Implements of Moment Extansion model (Chen, Vlah & White (2020), https://arxiv.org/abs/2005.00523)
     using velocileptors : https://github.com/sfschen/velocileptors
     '''
-    def __init__(self, 
-        pk_lin_file=None, theory = None): 
+    def __init__(self, k1=None, pk_lin=None, 
+        pk_lin_file=None, theory = 'LPT', beyond_gauss = False, 
+        one_loop= True,kmin = 5e-4, kmax = 0.4, 
+        nk = 500, cutoff=2, extrap_min = -4, extrap_max = 3, 
+        N = 2000, threads=1, jn=5, shear=True): 
         super().__init__()
         
-        k1,pk_lin=np.loadtxt(pk_lin_file).T
-        
+        if not pk_lin_file is not None:
+            k1, pk_lin = np.loadtxt(pk_lin_file, unpack=True)
+
         if theory == 'LPT':
             from velocileptors.LPT.moment_expansion_fftw import MomentExpansion
         if theory == 'EPT':
             from velocileptors.EPT.moment_expansion_fftw import MomentExpansion
-            
 
-        mome = MomentExpansion(k1,pk_lin)
-        
         moments = MomentExpansion(
-                                k1,  pk_lin, beyond_gauss = False, 
-                                one_loop= True,kmin = 5e-4, kmax = 0.4, 
-                                nk = 500, cutoff=2, extrap_min = -4, extrap_max = 3, 
-                                N = 2000, threads=1, jn=5, shear=True
-                                )
-        
+            k1, pk_lin, 
+            beyond_gauss = beyond_gauss, 
+            one_loop=one_loop,kmin = kmin, kmax = kmax, 
+            nk = nk, cutoff=cutoff, extrap_min = extrap_min, extrap_max = extrap_max, 
+            N = N, threads= threads, jn=jn, shear=shear
+            )
         
         self.k1 = k1
         self.pk_lin = pk_lin

@@ -43,7 +43,6 @@ class Data:
             self.read_data(data_file)
         if cova_file is not None:
             self.read_cova(cova_file)
-        if self.coords is not None and self.cova_coords is not None:
             self.match_cova()
 
     def read_data(self, data_file):
@@ -160,11 +159,12 @@ class Data:
         '''
 
         inv_cova = np.linalg.inv(self.cova)
+        correction = 1
         if nmocks > 0:
             #-- Hartlap correction
             correction = (1 - (self.values.size + 1.)/(nmocks-1))
             inv_cova *= correction
-
+        
         self.hartlap_correction = correction  
         self.inv_cova = inv_cova
     
@@ -199,7 +199,11 @@ class Data:
         n_ell = ell.size
 
         values = self.values
-        data_error = np.sqrt(np.diag(self.cova))
+
+        if self.cova is not None:
+            data_error = np.sqrt(np.diag(self.cova))
+        else:
+            data_error = None
 
         if f is None:
             f, axs = plt.subplots(ncols=n_space, nrows=n_ell, figsize=figsize, sharex='col', squeeze=False)
@@ -229,14 +233,92 @@ class Data:
                 x = coords['scale'][w]
                 power_x = power_k if space[col] == 0 else power_r
                 y_value = values[w]*x**power_x
-                y_error = data_error[w]*x**power_x
                 ax = axs[row, col]
-                if fill_between: 
-                    ax.fill_between(x, y_value-y_error, y_value+y_error, color=f'C{row}', alpha=alpha)
-                else: 
-                    ax.errorbar(x, y_value, y_error, fmt='o', color=f'C{row}', alpha=alpha)
+                
+                if data_error is not None:
+                    y_error = data_error[w]*x**power_x
+                    if fill_between: 
+                        ax.fill_between(x, y_value-y_error, y_value+y_error, color=f'C{row}', alpha=alpha)
+                    else: 
+                        ax.errorbar(x, y_value, y_error, fmt='o', color=f'C{row}', alpha=alpha)
+                else:
+                    ax.plot(x, y_value, color=f'C{row}', alpha=alpha)
                 if not y_model is None:
                     axs[row, col].plot(x, y_model[w]*x**power_x, color=f'C{row}')
+                ax.grid(ls=':', color='k', alpha=0.3)
+            axs[row, col].set_xlabel(xlabels[space[col]])
+            axs[0, col].set_title(titles[space[col]])
+
+        return f, axs
+        
+    def plot_error(self, y_model=None, f=None, axs=None, power_k=1, power_r=1, fill_between=False,
+        alpha=None, color=None, ls=None, figsize=(7, 8)):
+        ''' 
+        Plotting function for uncertainties only
+
+        Plots the uncertainties of multipoles in both spaces (if available) with error bars 
+
+        Parameters
+        ----------
+        y_model : np.array, optional
+            Array containing the model evaluated at the data coordinates
+        f : plt.figure, optional
+            Figure object already created and to be reused
+        axs : array of Axes, optional
+            Axes array already created and to be reused
+        power_k : int
+            Scales the plotted power spectra by ``k**power_k``
+        power_r : int 
+            Scales the plotted correlation function by ``r**power_r``
+        fill_between : bool 
+            If true, plots a shaded area instead of points with error bars
+
+        '''
+        
+        coords = self.coords
+        space = np.unique(coords['space'])
+        n_space = space.size
+        ell = np.unique(coords['ell'])
+        n_ell = ell.size
+
+        values = self.values
+        data_error = np.sqrt(np.diag(self.cova))
+ 
+        if f is None:
+            f, axs = plt.subplots(ncols=n_space, nrows=n_ell, figsize=figsize, sharex='col', squeeze=False)
+
+        xlabels = [r'$k$ [$h$ Mpc$^{-1}$]', r'$r$ [$h^{-1}$ Mpc]']
+        if power_k == 0:
+            title_k = r'$P_\ell(k)$'
+        elif power_k == 1:
+            title_k = fr'$k P_\ell(k)$'
+        else:
+            title_k = r'$k^{{{power_k}}} P_\ell(k)$'.format(power_k=power_k)
+
+        if power_r == 0:
+            title_r =  r'$\xi_\ell(k)$'
+        elif power_r == 1:
+            title_r = fr'$r \xi_\ell(k)$'
+        else:
+            title_r =  fr'$r^{{{power_r}}} \xi_\ell(k)$'
+        titles = [title_k, title_r]
+
+
+        for col in range(n_space):
+            w_space = coords['space'] == space[col]
+            for row in range(n_ell):
+                w_ell = coords['ell'] == ell[row]
+                w = w_space & w_ell
+                x = coords['scale'][w]
+                power_x = power_k if space[col] == 0 else power_r
+                y_value = data_error[w]*x**power_x
+                ax = axs[row, col]
+                c = f'C{row}' if color is None else color
+                ax.plot(x, y_value, color=c, alpha=alpha, ls=ls)
+
+                if not y_model is None:
+                    axs[row, col].plot(x, y_model[w]*x**power_x, color=c, ls=ls)
+                
                 ax.grid(ls=':', color='k', alpha=0.3)
             axs[row, col].set_xlabel(xlabels[space[col]])
             axs[0, col].set_title(titles[space[col]])
