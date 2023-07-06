@@ -152,8 +152,14 @@ class Model:
         n_ell = ell.size
         k = self.k
         r = self.r
-        wr = (r>=r_range[0]) & (r<=r_range[1])
-        wk = (k>=k_range[0]) & (k<=k_range[1])
+        if not r_range is None:
+            wr = (r>=r_range[0]) & (r<=r_range[1])
+        else: 
+            wr = r==r 
+        if not k_range is None:
+            wk = (k>=k_range[0]) & (k<=k_range[1])
+        else:
+            wk = k==k
 
         if convolved and not self.window_mult is None:
             pk_mult = self.pk_mult_convol
@@ -172,16 +178,16 @@ class Model:
         for i in range(n_ell):
             x = k[wk] 
             y = pk_mult[i, wk]*x**power_k
-            axs[i, 0].plot(x, y, color=f'C{i}', ls=ls, label=r'$\ell=$'+f'{ell[i]}')
+            axs[i, 0].plot(x, y, color=f'C{i}', ls=ls,) #label=r'$\ell=$'+f'{ell[i]}')
             axs[i, 0].set_xlim(k_range)
-            axs[i, 0].legend()
+            #axs[i, 0].legend()
         
         for i in range(n_ell):
             x = r[wr]
             y = xi_mult[i, wr] * x**power_r
-            axs[i, 1].plot(x, y, color=f'C{i}', ls=ls, label=r'$\ell=$'+f'{ell[i]}')
+            axs[i, 1].plot(x, y, color=f'C{i}', ls=ls, )#label=r'$\ell=$'+f'{ell[i]}')
             axs[i, 1].set_xlim(r_range)
-            axs[i, 1].legend()
+            #axs[i, 1].legend()
 
         axs[-1, 0].set_xlabel(r'$k$ [$h$ Mpc$^{-1}$]')
         axs[-1, 1].set_xlabel(r'$r$ [$h^{-1}$ Mpc]')
@@ -652,7 +658,7 @@ class BAO(Model):
             term_a = (pars['q_1']*delta**2 + pars['q_2']*delta**4) * damp
             #term_b = np.outer(mu**pars['b_v'], (1- (k/pars['k_v'])**pars['a_v']))
             term_b = 1 - np.outer(mu**pars['b_v'], k**pars['a_v']/pars['k_v'])
-            damp = np.exp( term_a*term_b)*jeans
+            damp = np.exp( term_a*term_b )*jeans
         else:
             damp=1.
         
